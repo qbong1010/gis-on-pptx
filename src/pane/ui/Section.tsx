@@ -21,7 +21,7 @@ export function Section({
   return (
     <section className={cn("border-b border-border", className)}>
       <div className="flex items-center gap-1 px-3 py-2">
-        <button type="button" onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-1 text-left text-[12px] font-semibold">
+        <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="flex min-w-0 flex-1 items-center gap-1 rounded text-left text-[12px] font-semibold focus-visible:outline-2 focus-visible:outline-ring">
           <ChevronDown className={cn("size-3.5 shrink-0 text-muted-foreground transition-transform", !open && "-rotate-90")} />
           <span className="truncate">{title}</span>
         </button>

@@ -93,7 +93,7 @@ export default defineConfig(async ({ command }) => {
     },
     build: {
       outDir: "dist",
-      sourcemap: true,
+      sourcemap: false, // 배포 번들에 소스 노출 방지 (M11)
       rolldownOptions: {
         input: {
           map: path.resolve(import.meta.dirname, "index.html"), // 지도 박스 (ContentApp)

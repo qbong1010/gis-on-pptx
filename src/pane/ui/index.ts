@@ -6,3 +6,5 @@ export { Toggle } from "./Toggle";
 export { Segmented } from "./Segmented";
 export { ColorInput } from "./ColorInput";
 export { Section, EmptyState } from "./Section";
+export { IconButton } from "./IconButton";
+export { Popover, MenuItem } from "./Popover";

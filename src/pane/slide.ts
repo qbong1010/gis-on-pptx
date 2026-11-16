@@ -7,6 +7,7 @@
  *  - shape.tags.add / tags.getItemOrNullObject / shape.name 정상, addTextBox·addGroup·rotation 정상
  *  - presentation.pageSetup(1.10) 으로 슬라이드 크기 조회 (960×540)
  */
+import { stripInvalidXml } from "@/lib/xml";
 import { diag } from "@/pane/diag";
 import type { Frame } from "@/pane/model";
 import { DEFAULT_SLIDE } from "@/pane/model";
@@ -32,6 +33,12 @@ export interface SlideAdapter {
   kind: "office" | "mock";
   caps: { tags: boolean; textBox: boolean; group: boolean; selection: boolean; svg: boolean };
   currentSlideId(): Promise<string | null>;
+  /** 이후 모든 도형 조작을 이 슬라이드로 고정 (null = 해제, 현재 선택 슬라이드 사용) */
+  bindSlide(id: string | null): void;
+  /** 슬라이드 번호(1부터)·전체 수. 없으면 null */
+  slideInfo(id: string): Promise<{ index: number; count: number } | null>;
+  /** 슬라이드로 이동(선택). 성공 여부 */
+  selectSlide(id: string): Promise<boolean>;
   slideSize(): Promise<{ width: number; height: number }>;
   listShapes(): Promise<SlideShape[]>;
   insertImage(pngBase64: string, f: Frame): Promise<string>;
@@ -40,7 +47,11 @@ export interface SlideAdapter {
   /** 여러 텍스트 상자를 한 번의 PowerPoint.run 으로 (속도) */
   addTextBoxes?(items: { text: string; box: Frame; style: TextStyle; tags: Record<string, string>; name: string }[]): Promise<string[]>;
   tagShape(id: string, tags: Record<string, string>, name?: string): Promise<void>;
-  deleteShapes(ids: string[]): Promise<void>;
+  /** 실패한 개수를 돌려준다 (이미 없는 도형은 무시) */
+  deleteShapes(ids: string[]): Promise<number>;
+  /** 투명 사각형 (배경지도가 없을 때 영역 추적용) */
+  addFrameRect(f: Frame, tags: Record<string, string>, name: string): Promise<string>;
+  bringToFront(ids: string[]): Promise<void>;
   group?(ids: string[], name: string): Promise<string>;
   ungroup?(id: string): Promise<string[]>;
   onSelectionChanged(cb: (sel: SlideShape[]) => void): () => void;
@@ -76,9 +87,15 @@ export class OfficeSlideAdapter implements SlideAdapter {
       }
     })(),
   };
+  /** 반영 중 고정한 슬라이드 id — 모든 도형 조작은 이 슬라이드에만 한다 (H1) */
+  private boundId: string | null = null;
 
   constructor() {
     diag(`OfficeSlideAdapter caps: ${JSON.stringify(this.caps)}`);
+  }
+
+  bindSlide(id: string | null) {
+    this.boundId = id;
   }
 
   async currentSlideId(): Promise<string | null> {
@@ -88,6 +105,50 @@ export class OfficeSlideAdapter implements SlideAdapter {
       await ctx.sync();
       return slides.items[0]?.id ?? null;
     });
+  }
+
+  /** 고정된 슬라이드(없으면 현재 선택 슬라이드). 선택이 없으면 명확한 오류 */
+  private async getSlide(ctx: PowerPoint.RequestContext): Promise<PowerPoint.Slide> {
+    if (this.boundId) {
+      const s = ctx.presentation.slides.getItemOrNullObject(this.boundId);
+      s.load("isNullObject,id");
+      await ctx.sync();
+      if (s.isNullObject) throw new Error("대상 슬라이드를 찾을 수 없습니다(삭제되었을 수 있습니다).");
+      return s;
+    }
+    const slides = ctx.presentation.getSelectedSlides();
+    slides.load("items/id");
+    await ctx.sync();
+    if (!slides.items.length) throw new Error("선택된 슬라이드가 없습니다. 슬라이드를 하나 선택한 뒤 다시 시도하세요.");
+    return slides.items[0];
+  }
+
+  async slideInfo(id: string): Promise<{ index: number; count: number } | null> {
+    return PowerPoint.run(async (ctx) => {
+      const slides = ctx.presentation.slides;
+      slides.load("items/id");
+      await ctx.sync();
+      const i = slides.items.findIndex((s) => s.id === id);
+      return i < 0 ? null : { index: i + 1, count: slides.items.length };
+    });
+  }
+
+  async selectSlide(id: string): Promise<boolean> {
+    if (!this.caps.selection) return false;
+    try {
+      await PowerPoint.run(async (ctx) => {
+        ctx.presentation.setSelectedSlides([id]);
+        await ctx.sync();
+      });
+    } catch (e) {
+      diag(`슬라이드 선택 실패: ${errMsg(e)}`, "warn");
+      return false;
+    }
+    for (let i = 0; i < 20; i++) {
+      if ((await this.currentSlideId().catch(() => null)) === id) return true;
+      await sleep(100);
+    }
+    return false;
   }
 
   async slideSize() {
@@ -124,13 +185,11 @@ export class OfficeSlideAdapter implements SlideAdapter {
     return out;
   }
 
+  /** z 순서(아래 → 위) 그대로 */
   async listShapes(): Promise<SlideShape[]> {
     return PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
-      await ctx.sync();
-      if (!slides.items.length) return [];
-      return this.readShapes(ctx, slides.items[0].shapes);
+      const slide = await this.getSlide(ctx);
+      return this.readShapes(ctx, slide.shapes);
     });
   }
 
@@ -144,7 +203,17 @@ export class OfficeSlideAdapter implements SlideAdapter {
     });
   }
 
+  /** setSelectedDataAsync 는 "현재 선택된 슬라이드"에 넣으므로, 고정 슬라이드가 아니면 다시 선택하고 안 되면 중단한다 */
+  private async ensureOnBound(): Promise<void> {
+    if (!this.boundId) return;
+    const cur = await this.currentSlideId().catch(() => null);
+    if (cur === this.boundId) return;
+    diag(`반영 중 슬라이드가 바뀜(${cur} ≠ ${this.boundId}) → 원래 슬라이드를 다시 선택`, "warn");
+    if (!(await this.selectSlide(this.boundId))) throw new Error("반영 중 슬라이드가 바뀌어 중단했습니다. 지도가 있는 슬라이드를 선택한 뒤 다시 시도하세요.");
+  }
+
   private async insertAndFind(data: string, type: Office.CoercionType, f: Frame): Promise<string> {
+    await this.ensureOnBound();
     const before = new Set((await this.listShapes()).map((s) => s.id));
     await this.setSelected(data, type, f);
     // 삽입 직후에는 도형 목록에 아직 반영되지 않을 수 있어 짧게 재시도 [확인 필요: 실측상 대부분 즉시 반영]
@@ -169,66 +238,40 @@ export class OfficeSlideAdapter implements SlideAdapter {
     return this.insertAndFind(svg, Office.CoercionType.XmlSvg, f);
   }
 
+  private styleTextBox(tb: PowerPoint.Shape, st: TextStyle) {
+    tb.fill.clear();
+    tb.lineFormat.visible = false;
+    tb.textFrame.wordWrap = false;
+    tb.textFrame.autoSizeSetting = "AutoSizeNone";
+    tb.textFrame.leftMargin = 0;
+    tb.textFrame.rightMargin = 0;
+    tb.textFrame.topMargin = 0;
+    tb.textFrame.bottomMargin = 0;
+    tb.textFrame.verticalAlignment = "Middle";
+    const font = tb.textFrame.textRange.font;
+    font.size = st.fontSizePt;
+    font.color = st.color;
+    font.bold = st.bold;
+    font.name = st.fontName;
+    tb.textFrame.textRange.paragraphFormat.horizontalAlignment = st.align ?? "Center";
+    if (st.rotation) tb.rotation = st.rotation;
+  }
+
   async addTextBox(text: string, box: Frame, st: TextStyle, meta?: { tags: Record<string, string>; name: string }): Promise<string> {
-    return PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
-      await ctx.sync();
-      const slide = slides.items[0];
-      const tb = slide.shapes.addTextBox(text, { left: box.left, top: box.top, width: box.width, height: box.height });
-      tb.fill.clear();
-      tb.lineFormat.visible = false;
-      tb.textFrame.wordWrap = false;
-      tb.textFrame.autoSizeSetting = "AutoSizeNone";
-      tb.textFrame.leftMargin = 0;
-      tb.textFrame.rightMargin = 0;
-      tb.textFrame.topMargin = 0;
-      tb.textFrame.bottomMargin = 0;
-      tb.textFrame.verticalAlignment = "Middle";
-      const font = tb.textFrame.textRange.font;
-      font.size = st.fontSizePt;
-      font.color = st.color;
-      font.bold = st.bold;
-      font.name = st.fontName;
-      tb.textFrame.textRange.paragraphFormat.horizontalAlignment = st.align ?? "Center";
-      if (st.rotation) tb.rotation = st.rotation;
-      if (meta) {
-        if (this.caps.tags) for (const [k, v] of Object.entries(meta.tags)) tb.tags.add(k, v);
-        tb.name = meta.name;
-      }
-      tb.load("id");
-      await ctx.sync();
-      return tb.id;
-    });
+    const ids = await this.addTextBoxes([{ text, box, style: st, tags: meta?.tags ?? {}, name: meta?.name ?? "" }]);
+    return ids[0];
   }
 
   async addTextBoxes(items: { text: string; box: Frame; style: TextStyle; tags: Record<string, string>; name: string }[]): Promise<string[]> {
     if (!items.length) return [];
     return PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
-      await ctx.sync();
-      const shapes = slides.items[0].shapes;
+      const slide = await this.getSlide(ctx);
+      const shapes = slide.shapes;
       const boxes = items.map((it) => {
-        const tb = shapes.addTextBox(it.text, { left: it.box.left, top: it.box.top, width: it.box.width, height: it.box.height });
-        tb.fill.clear();
-        tb.lineFormat.visible = false;
-        tb.textFrame.wordWrap = false;
-        tb.textFrame.autoSizeSetting = "AutoSizeNone";
-        tb.textFrame.leftMargin = 0;
-        tb.textFrame.rightMargin = 0;
-        tb.textFrame.topMargin = 0;
-        tb.textFrame.bottomMargin = 0;
-        tb.textFrame.verticalAlignment = "Middle";
-        const font = tb.textFrame.textRange.font;
-        font.size = it.style.fontSizePt;
-        font.color = it.style.color;
-        font.bold = it.style.bold;
-        font.name = it.style.fontName;
-        tb.textFrame.textRange.paragraphFormat.horizontalAlignment = it.style.align ?? "Center";
-        if (it.style.rotation) tb.rotation = it.style.rotation;
+        const tb = shapes.addTextBox(stripInvalidXml(it.text), { left: it.box.left, top: it.box.top, width: it.box.width, height: it.box.height });
+        this.styleTextBox(tb, it.style);
         if (this.caps.tags) for (const [k, v] of Object.entries(it.tags)) tb.tags.add(k, v);
-        tb.name = it.name;
+        if (it.name) tb.name = it.name;
         tb.load("id");
         return tb;
       });
@@ -237,36 +280,76 @@ export class OfficeSlideAdapter implements SlideAdapter {
     });
   }
 
+  /** 배경지도를 끈 지도의 영역 추적용: 채움·선 없는 투명 사각형 (L6) */
+  async addFrameRect(f: Frame, tags: Record<string, string>, name: string): Promise<string> {
+    return PowerPoint.run(async (ctx) => {
+      const slide = await this.getSlide(ctx);
+      const r = slide.shapes.addGeometricShape(PowerPoint.GeometricShapeType.rectangle, { left: f.left, top: f.top, width: f.width, height: f.height });
+      r.fill.clear();
+      r.lineFormat.visible = false;
+      if (this.caps.tags) for (const [k, v] of Object.entries(tags)) r.tags.add(k, v);
+      r.name = name;
+      r.load("id");
+      await ctx.sync();
+      return r.id;
+    });
+  }
+
   async tagShape(id: string, tags: Record<string, string>, name?: string): Promise<void> {
     await PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
-      await ctx.sync();
-      const sh = slides.items[0].shapes.getItem(id);
+      const slide = await this.getSlide(ctx);
+      const sh = slide.shapes.getItem(id);
       if (this.caps.tags) for (const [k, v] of Object.entries(tags)) sh.tags.add(k, v);
       if (name) sh.name = name;
       await ctx.sync();
     });
   }
 
-  async deleteShapes(ids: string[]): Promise<void> {
-    if (!ids.length) return;
+  /** 삭제 직전에 존재하는 것만 골라 지운다. 이미 없는 도형은 무시, 실패한 개수를 돌려준다 (M2) */
+  async deleteShapes(ids: string[]): Promise<number> {
+    if (!ids.length) return 0;
+    let failed = 0;
     await PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
+      const slide = await this.getSlide(ctx);
+      const found = ids.map((id) => slide.shapes.getItemOrNullObject(id));
+      found.forEach((s) => s.load("isNullObject"));
       await ctx.sync();
-      const shapes = slides.items[0].shapes;
-      for (const id of ids) shapes.getItem(id).delete();
+      const live = found.filter((s) => !s.isNullObject);
+      try {
+        live.forEach((s) => s.delete());
+        await ctx.sync();
+      } catch {
+        // 일괄 삭제가 실패하면 하나씩 시도
+        for (const s of live) {
+          try {
+            s.delete();
+            await ctx.sync();
+          } catch {
+            failed++;
+          }
+        }
+      }
+    });
+    return failed;
+  }
+
+  /** 지정한 도형들을 (주어진 순서대로) 맨 위로 — 다시 반영한 뒤에도 사용자의 제목·화살표가 위에 있도록 (M6) */
+  async bringToFront(ids: string[]): Promise<void> {
+    if (!ids.length || !this.caps.group) return; // setZOrder = PowerPointApi 1.8
+    await PowerPoint.run(async (ctx) => {
+      const slide = await this.getSlide(ctx);
+      const found = ids.map((id) => slide.shapes.getItemOrNullObject(id));
+      found.forEach((s) => s.load("isNullObject"));
+      await ctx.sync();
+      for (const s of found) if (!s.isNullObject) s.setZOrder(PowerPoint.ShapeZOrder.bringToFront);
       await ctx.sync();
     });
   }
 
   async group(ids: string[], name: string): Promise<string> {
     return PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
-      await ctx.sync();
-      const g = slides.items[0].shapes.addGroup(ids);
+      const slide = await this.getSlide(ctx);
+      const g = slide.shapes.addGroup(ids);
       g.name = name;
       g.load("id");
       await ctx.sync();
@@ -277,10 +360,8 @@ export class OfficeSlideAdapter implements SlideAdapter {
   /** 묶음 해제 — 실측(PowerPoint 16.0.20527): ungroup() 은 반환값 없음(void), 자식 도형은 id 와 태그를 그대로 유지 → 해제 전에 자식 id 를 읽어 둔다 */
   async ungroup(id: string): Promise<string[]> {
     return PowerPoint.run(async (ctx) => {
-      const slides = ctx.presentation.getSelectedSlides();
-      slides.load("items/id");
-      await ctx.sync();
-      const sh = slides.items[0].shapes.getItem(id);
+      const slide = await this.getSlide(ctx);
+      const sh = slide.shapes.getItem(id);
       const grp = sh.group;
       grp.shapes.load("items/id");
       await ctx.sync();
@@ -293,21 +374,29 @@ export class OfficeSlideAdapter implements SlideAdapter {
 
   onSelectionChanged(cb: (sel: SlideShape[]) => void): () => void {
     if (!this.caps.selection) return () => {};
+    let disposed = false;
+    let added = false;
     const handler = async () => {
+      if (disposed) return;
       try {
         const sel = await PowerPoint.run(async (ctx) => this.readShapes(ctx, ctx.presentation.getSelectedShapes()));
-        cb(sel);
+        if (!disposed) cb(sel);
       } catch (e) {
         diag(`선택 읽기 실패: ${errMsg(e)}`, "warn");
       }
     };
-    let added = false;
+    const remove = () =>
+      Office.context.document.removeHandlerAsync(Office.EventType.DocumentSelectionChanged, { handler }, (r) => {
+        if (r.status !== Office.AsyncResultStatus.Succeeded) diag(`선택 이벤트 해제 실패: ${r.error.message}`, "warn");
+      });
     Office.context.document.addHandlerAsync(Office.EventType.DocumentSelectionChanged, handler, (r) => {
       added = r.status === Office.AsyncResultStatus.Succeeded;
       if (!added) diag(`선택 이벤트 등록 실패: ${r.error.message}`, "warn");
+      else if (disposed) remove(); // 등록이 끝나기 전에 해제 요청이 왔던 경우
     });
     return () => {
-      if (added) Office.context.document.removeHandlerAsync(Office.EventType.DocumentSelectionChanged, { handler });
+      disposed = true;
+      if (added) remove();
     };
   }
 }
@@ -373,8 +462,25 @@ export class MockSlideAdapter implements SlideAdapter {
     return { id: s.id, name: s.name, left: s.left, top: s.top, width: s.width, height: s.height, mapId: s.tags[TAG_MAP], part: s.tags[TAG_PART] };
   }
 
+  bindSlide() {}
   async currentSlideId() {
     return "mock-slide-1";
+  }
+  async slideInfo(id: string) {
+    return id === "mock-slide-1" ? { index: 1, count: 1 } : null;
+  }
+  async selectSlide() {
+    return true;
+  }
+  async addFrameRect(f: Frame, tags: Record<string, string>, name: string) {
+    const id = this.add("svg", "", f);
+    await this.tagShape(id, tags, name);
+    return id;
+  }
+  async bringToFront(ids: string[]) {
+    const moving = ids.map((i) => this.shapes.find((x) => x.id === i)).filter(Boolean) as MockShape[];
+    this.shapes = [...this.shapes.filter((x) => !ids.includes(x.id)), ...moving];
+    this.emit();
   }
   async slideSize() {
     return { ...DEFAULT_SLIDE };
@@ -413,6 +519,7 @@ export class MockSlideAdapter implements SlideAdapter {
   async deleteShapes(ids: string[]) {
     this.shapes = this.shapes.filter((s) => !ids.includes(s.id));
     this.emit();
+    return 0;
   }
   async group(ids: string[], name: string) {
     const kids = this.shapes.filter((s) => ids.includes(s.id));

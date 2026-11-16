@@ -7,8 +7,8 @@
 import L from "leaflet";
 import { useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
 
-import { buildCategories, featureKind, markerIconHtml, resolveStyle } from "@/lib/style";
-import { placeDataLabels, type BakeLayer } from "@/lib/bake";
+import { buildCategories, featureKind, resolveStyle, type PointShape } from "@/lib/style";
+import { flattenCollections, placeDataLabels, type BakeLayer } from "@/lib/bake";
 import { TILE_CROSS_ORIGIN, type Basemap } from "@/lib/basemaps";
 import type { PlacedLabel } from "@/lib/labels";
 import { createVectorBasemapLayer, type VectorBasemapLayer } from "@/lib/vectorBasemap";
@@ -38,55 +38,87 @@ type Props = {
   deco: DecoSettings;
   zoom100: boolean;
   maxHeight: number;
+  onToggle100?: () => void;
   onViewChange: (v: MapDoc["view"]) => void;
   onReady: (map: L.Map) => void;
 };
 
-function dataLayerFor(layer: BakeLayer): L.Layer {
+/**
+ * 사각형·삼각형 점 기호 — divIcon(DOM) 대신 캔버스에 직접 그린다 (점이 수천 개여도 가볍다) (M10)
+ * Leaflet 의 CircleMarker 를 상속해 `_updatePath` 만 바꾼다. Bake 의 markerSvg 와 같은 치수.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const ShapeMarker = (L.CircleMarker as any).extend({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  _updatePath(this: any) {
+    const r = this._renderer;
+    if (!r || !r._drawing || this._empty()) return;
+    const ctx = r._ctx as CanvasRenderingContext2D;
+    const p = this._point as L.Point;
+    const R = this._radius as number;
+    ctx.beginPath();
+    if (this.options.shape === "square") ctx.rect(p.x - R, p.y - R, R * 2, R * 2);
+    else {
+      const h = R * 1.15;
+      ctx.moveTo(p.x, p.y - h);
+      ctx.lineTo(p.x + h, p.y + h * 0.8);
+      ctx.lineTo(p.x - h, p.y + h * 0.8);
+      ctx.closePath();
+    }
+    r._fillStroke(ctx, this);
+  },
+});
+
+function styleFnFor(layer: BakeLayer) {
   const cats = buildCategories(layer.data, layer.style);
-  const resolve = (f: GeoJSON.Feature) => {
-    const kind = featureKind(f.geometry);
-    return kind ? { kind, r: resolveStyle(layer.style, kind, f.properties as Record<string, unknown> | null, cats) } : null;
+  return (f?: GeoJSON.Feature): L.PathOptions => {
+    const kind = f ? featureKind(f.geometry) : null;
+    if (!f || !kind) return {};
+    const r = resolveStyle(layer.style, kind, f.properties as Record<string, unknown> | null, cats);
+    return {
+      stroke: r.strokeWidth > 0,
+      color: r.stroke,
+      weight: r.strokeWidth,
+      opacity: r.strokeOpacity,
+      dashArray: r.dashArray ?? undefined,
+      lineCap: r.cap,
+      lineJoin: "round",
+      fill: !!r.fill,
+      fillColor: r.fill ?? undefined,
+      fillOpacity: r.fillOpacity,
+      fillRule: "evenodd",
+      radius: r.radius,
+    } as L.PathOptions;
   };
-  return L.geoJSON(layer.data, {
+}
+
+function dataLayerFor(layer: BakeLayer): L.GeoJSON {
+  const cats = buildCategories(layer.data, layer.style);
+  const shape: PointShape = layer.style.pointShape;
+  return L.geoJSON(flattenCollections(layer.data), {
     interactive: false,
-    style: (f) => {
-      const x = f && resolve(f);
-      if (!x) return {};
-      const { r } = x;
-      return {
-        stroke: r.strokeWidth > 0,
-        color: r.stroke,
-        weight: r.strokeWidth,
-        opacity: r.strokeOpacity,
-        dashArray: r.dashArray ?? undefined,
-        lineCap: r.cap,
-        lineJoin: "round",
-        fill: !!r.fill,
-        fillColor: r.fill ?? undefined,
-        fillOpacity: r.fillOpacity,
-        fillRule: "evenodd",
-        radius: r.radius,
-      } as L.PathOptions;
-    },
+    style: styleFnFor(layer),
     pointToLayer: (f, ll) => {
-      const x = resolve(f);
-      const r = x!.r;
-      if (r.shape === "circle") return L.circleMarker(ll, { radius: r.radius, interactive: false });
-      const icon = markerIconHtml(r);
-      return L.marker(ll, { interactive: false, keyboard: false, icon: L.divIcon({ html: icon.html, className: "sm-marker", iconSize: [icon.size, icon.size] }) });
+      const kind = featureKind(f.geometry);
+      const r = resolveStyle(layer.style, kind ?? "point", f.properties as Record<string, unknown> | null, cats);
+      if (shape === "circle") return L.circleMarker(ll, { radius: r.radius, interactive: false });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      return new (ShapeMarker as any)(ll, { radius: r.radius, interactive: false, shape }) as L.Layer as L.CircleMarker;
     },
   });
 }
 
-export default function MapPreview({ ref, W, H, tileScale, initialView, basemap, layers, deco, zoom100, maxHeight, onViewChange, onReady }: Props) {
+type CachedLayer = { gj: L.GeoJSON; data: BakeLayer["data"]; sig: string; shape: PointShape };
+
+export default function MapPreview({ ref, W, H, tileScale, initialView, basemap, layers, deco, zoom100, maxHeight, onToggle100, onViewChange, onReady }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const mapDivRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const tilesRef = useRef<L.TileLayer[]>([]);
-  const dataRef = useRef<L.Layer[]>([]);
+  const dataRef = useRef(new Map<string, CachedLayer>());
   const vecRef = useRef<VectorBasemapLayer | null>(null);
   const loadingRef = useRef(0);
+  const orderRef = useRef("");
   const [avail, setAvail] = useState(320);
   const [tick, setTick] = useState(0);
   const [moving, setMoving] = useState(false);
@@ -140,7 +172,7 @@ export default function MapPreview({ ref, W, H, tileScale, initialView, basemap,
       map.remove();
       mapRef.current = null;
       tilesRef.current = [];
-      dataRef.current = [];
+      dataRef.current = new Map();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -195,12 +227,40 @@ export default function MapPreview({ ref, W, H, tileScale, initialView, basemap,
     }
   }, [basemap, tileScale]);
 
-  /* ----- 데이터 레이어 ----- */
+  /* ----- 데이터 레이어 (레이어별 캐시: 스타일만 바뀌면 setStyle, 데이터가 바뀌면 다시 만든다) ----- */
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
-    dataRef.current.forEach((l) => map.removeLayer(l));
-    dataRef.current = layers.map((l) => dataLayerFor(l).addTo(map));
+    const cache = dataRef.current;
+    const keep = new Set(layers.map((l) => l.id));
+    for (const [id, e] of cache) {
+      if (!keep.has(id)) {
+        map.removeLayer(e.gj);
+        cache.delete(id);
+      }
+    }
+    let reorder = false;
+    for (const l of layers) {
+      const sig = JSON.stringify(l.style);
+      const e = cache.get(l.id);
+      if (e && e.data === l.data && e.shape === l.style.pointShape) {
+        if (e.sig !== sig) {
+          e.gj.setStyle(styleFnFor(l) as L.StyleFunction);
+          e.sig = sig;
+        }
+      } else {
+        if (e) map.removeLayer(e.gj);
+        const gj = dataLayerFor(l).addTo(map);
+        cache.set(l.id, { gj, data: l.data, sig, shape: l.style.pointShape });
+        reorder = true;
+      }
+    }
+    // 그리는 순서(아래 → 위)를 레이어 순서에 맞춘다
+    const order = layers.map((l) => l.id).join(",");
+    if (reorder || order !== orderRef.current) {
+      layers.forEach((l) => cache.get(l.id)?.gj.bringToFront());
+      orderRef.current = order;
+    }
     setTick((t) => t + 1);
   }, [layers]);
 
@@ -302,6 +362,17 @@ export default function MapPreview({ ref, W, H, tileScale, initialView, basemap,
             )}
           </div>
         </div>
+        {!zoom100 && scale < 0.75 && onToggle100 && (
+          <button
+            type="button"
+            onClick={onToggle100}
+            data-testid="scale-hint"
+            title="슬라이드에서 보이는 실제 글자·선 크기로 보기"
+            className="absolute top-1 left-1 z-[1100] rounded bg-foreground/80 px-1.5 py-0.5 text-[11px] text-background hover:bg-foreground"
+          >
+            {Math.round(scale * 100)}% 축소 표시 · 100% 보기
+          </button>
+        )}
       </div>
     </div>
   );

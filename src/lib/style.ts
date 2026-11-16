@@ -5,6 +5,8 @@
  */
 import type { FeatureCollection, Geometry } from "geojson";
 
+import "@/lib/xml";
+
 export type Dash = "solid" | "dash" | "dot" | "dashdot";
 export type PointShape = "circle" | "square" | "triangle";
 export type GeomKind = "polygon" | "line" | "point";
@@ -253,9 +255,7 @@ export function resolvedKey(r: Resolved): string {
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 
-export function escapeXml(s: string): string {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!);
-}
+export { escapeXml } from "@/lib/xml";
 
 /** 점 기호 하나 (원/사각/삼각) */
 export function markerSvg(r: Resolved, cx: number, cy: number): string {

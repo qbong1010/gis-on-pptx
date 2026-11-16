@@ -10,32 +10,44 @@ const CORNERS: { id: Corner; label: string }[] = [
   { id: "br", label: "오른쪽 아래" },
 ];
 
+/** 지도 영역을 본뜬 작은 도식 — 네 모서리를 눌러 위치를 고른다 (현재 위치는 채워서 표시) */
 function PosEditor({ pos, onChange }: { pos: DecoPos; onChange: (p: DecoPos) => void }) {
+  const cur = CORNERS.find((c) => c.id === pos.corner)?.label ?? "";
   return (
     <>
       <Field label="위치">
-        <div className="grid w-[92px] grid-cols-2 gap-1">
-          {CORNERS.map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              title={c.label}
-              onClick={() => onChange({ ...pos, corner: c.id })}
-              className={cn(
-                "relative h-[22px] rounded border border-border bg-background",
-                pos.corner === c.id && "border-primary bg-primary/10",
-              )}
-            >
-              <span
-                className={cn("absolute size-1.5 rounded-full", pos.corner === c.id ? "bg-primary" : "bg-muted-foreground/40")}
-                style={{ [c.id[0] === "t" ? "top" : "bottom"]: 3, [c.id[1] === "l" ? "left" : "right"]: 3 }}
-              />
-            </button>
-          ))}
+        <div className="flex items-center gap-2">
+          <div role="group" aria-label="꾸미기 위치" className="relative h-[60px] w-[104px] shrink-0 rounded-md border border-border bg-secondary/60 shadow-inner">
+            {CORNERS.map((c) => {
+              const on = pos.corner === c.id;
+              return (
+                <button
+                  key={c.id}
+                  type="button"
+                  title={c.label}
+                  aria-label={c.label}
+                  aria-pressed={on}
+                  onClick={() => onChange({ ...pos, corner: c.id })}
+                  className={cn(
+                    "absolute flex h-[22px] w-[30px] items-center justify-center rounded border transition-colors focus-visible:outline-2 focus-visible:outline-ring",
+                    on ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background hover:border-primary/50 hover:bg-accent",
+                  )}
+                  style={{ [c.id[0] === "t" ? "top" : "bottom"]: 4, [c.id[1] === "l" ? "left" : "right"]: 4 }}
+                >
+                  <span className={cn("size-1.5 rounded-sm", on ? "bg-primary-foreground" : "bg-muted-foreground/50")} />
+                </button>
+              );
+            })}
+          </div>
+          <span className="text-[11px] leading-snug text-muted-foreground">
+            {cur}
+            <br />
+            모서리를 눌러 바꿉니다
+          </span>
         </div>
       </Field>
       <Field label="여백">
-        <Slider value={pos.margin} min={0} max={80} step={2} unit="px" onChange={(v) => onChange({ ...pos, margin: v })} />
+        <Slider value={pos.margin} min={0} max={80} step={2} unit="px" label="여백" onChange={(v) => onChange({ ...pos, margin: v })} />
       </Field>
     </>
   );

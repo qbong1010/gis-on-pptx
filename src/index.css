@@ -31,13 +31,13 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.47 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --ring: oklch(0.55 0.17 255);
 }
 
 /* 콘텐츠 애드인은 iframe 박스 전체를 꽉 채워야 하므로 여백/스크롤 제거 */
@@ -95,3 +95,21 @@ body {
 .slide-map-cursor .h { left: -10px; top: -0.75px; width: 20px; height: 1.5px; }
 .slide-map-cursor .v { left: -0.75px; top: -10px; width: 1.5px; height: 20px; }
 .slide-map-cursor .dot { left: -2px; top: -2px; width: 4px; height: 4px; border-radius: 9999px; background: #ef4444; }
+
+/* ---------- 패널 공통 타이포·포커스 ---------- */
+/* 한글은 어절 단위로만 줄바꿈 (긴 영문·URL 은 넘칠 때만 끊는다) */
+.slide-map-root,
+.slide-map-root * {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.slide-map-root :is(button, input, select, textarea, a, [role="tab"]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+}
+.slide-map-root input[type="range"]:focus-visible { outline-offset: 3px; }
+.slide-map-root button:not(:disabled) { cursor: pointer; }
+.slide-map-root :is(input, select, textarea):hover:not(:disabled) { border-color: oklch(0.75 0 0); }
+@media (prefers-reduced-motion: reduce) {
+  .slide-map-root * { transition: none !important; animation: none !important; }
+}

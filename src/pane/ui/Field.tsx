@@ -10,7 +10,7 @@ export function Field({ label, children, hint, className, stack }: { label: stri
         <label className={cn("shrink-0 text-[12px] text-muted-foreground", !stack && "w-[68px]")}>{label}</label>
         <div className={cn("min-w-0", !stack && "flex-1")}>{children}</div>
       </div>
-      {hint && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground/80">{hint}</p>}
+      {hint && <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{hint}</p>}
     </div>
   );
 }

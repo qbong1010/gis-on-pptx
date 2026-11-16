@@ -5,17 +5,24 @@ echo ============================================
 echo  Slide Map - 2/2 실행
 echo ============================================
 echo.
-echo [!] PowerPoint 를 모두 닫은 상태에서 진행하세요.
 tasklist /FI "IMAGENAME eq POWERPNT.EXE" | find /I "POWERPNT.EXE" >nul
 if not errorlevel 1 (
-  echo     지금 PowerPoint 가 실행 중입니다. 저장 후 닫고 아무 키나 누르세요.
+  echo.
+  echo  [중단] PowerPoint 가 실행 중입니다. 저장하고 완전히 닫은 뒤 다시 실행하세요.
+  echo         ^(실행 중에 캐시를 지우면 애드인 등록이 꼬일 수 있습니다^)
   pause
+  exit /b 1
 )
 echo.
 echo [1/3] Office 애드인 캐시 비우기
-if exist "%LOCALAPPDATA%\Microsoft\Office\16.0\Wef" (
-  rmdir /s /q "%LOCALAPPDATA%\Microsoft\Office\16.0\Wef"
-  echo      삭제 완료
+rem --- Wef 폴더 전체를 지우면 webview2 사용자 데이터(저장된 VWorld 키 등)까지 사라진다 → 캐시 하위 폴더만 삭제 ---
+set "WEF=%LOCALAPPDATA%\Microsoft\Office\16.0\Wef"
+if exist "%WEF%" (
+  for %%D in (AddinInfo AggregatedCache AppCommands) do (
+    if exist "%WEF%\%%D" rmdir /s /q "%WEF%\%%D"
+  )
+  for /d %%G in ("%WEF%\{*}") do rmdir /s /q "%%G"
+  echo      캐시 삭제 완료 ^(webview2 사용자 데이터는 유지^)
 ) else (
   echo      캐시 없음
 )

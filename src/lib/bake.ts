@@ -10,11 +10,13 @@ import { bboxClip } from "@turf/turf";
 import type { Feature, Geometry, Polygon, MultiPolygon, LineString, MultiLineString, Position } from "geojson";
 
 import type { BakeOptions, BakePayload, LayerState } from "@/shared/protocol";
+import { TILE_CROSS_ORIGIN, type Basemap } from "@/lib/basemaps";
+import { tilePx } from "@/shared/crs";
 import { placeLabels, type LabelCandidate, type PlacedLabel } from "@/lib/labels";
 import { haloText } from "@/lib/decorations";
+import { stripInvalidXml, xmlId } from "@/lib/xml";
 import {
   buildCategories,
-  escapeXml as escXml,
   featureKind,
   markerSvg,
   resolveStyle,
@@ -42,10 +44,6 @@ export function makeProjector(map: L.Map): (lng: number, lat: number) => { x: nu
     const p = map.project(L.latLng(lat, lng), zoom);
     return { x: p.x - origin.x - pane.x, y: p.y - origin.y - pane.y };
   };
-}
-
-function escapeXml(s: string) {
-  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[c]!);
 }
 
 /* ------------------------------------------------------------------ */
@@ -149,7 +147,7 @@ export function buildSvg(map: L.Map, layers: LayerState[]): { svg: string; featu
       const q = proj(p[0], p[1]);
       parts.push(`<circle cx="${r2(q.x)}" cy="${r2(q.y)}" r="5" fill="${c}" stroke="#ffffff" stroke-width="1.5"/>`);
     }
-    if (parts.length) groups.push(`<g id="${escapeXml(layer.name)}">${parts.join("")}</g>`);
+    if (parts.length) groups.push(`<g id="${xmlId(layer.name)}">${parts.join("")}</g>`);
   }
 
   const svg =
@@ -258,7 +256,7 @@ function viewBbox(map: L.Map): [number, number, number, number] {
 }
 
 /** 레이어 하나의 SVG 본문(<g>…</g>) — 스타일은 resolveStyle 로 미리보기와 동일 */
-export function layerSvgBody(map: L.Map, layer: BakeLayer): { body: string; count: number } {
+export function layerSvgBody(map: L.Map, layer: BakeLayer): { body: string; count: number; skipped: number } {
   const bbox = viewBbox(map);
   const proj = makeProjector(map);
   const pt = (c: Position) => {
@@ -267,14 +265,23 @@ export function layerSvgBody(map: L.Map, layer: BakeLayer): { body: string; coun
   };
   const ring = (cs: Position[], close: boolean) => (cs.length ? `M${cs.map(pt).join("L")}${close ? "Z" : ""}` : "");
   const cats: Categories | null = buildCategories(layer.data, layer.style);
+  const data = flattenCollections(layer.data);
 
   // 같은 스타일끼리 한 path 로 묶는다
   const paths = new Map<string, { r: Resolved; kind: GeomKind; d: string[] }>();
   const marks: string[] = [];
   let count = 0;
-  for (const f of layer.data.features) {
+  let skipped = 0;
+  for (const f of data.features) {
     const kind = featureKind(f.geometry);
-    if (!kind) continue;
+    if (!kind) {
+      skipped++;
+      continue;
+    }
+    if (isEmptyGeometry(f.geometry)) {
+      skipped++;
+      continue;
+    }
     const g = clipFeature(f, bbox);
     if (!g) continue;
     count++;
@@ -308,15 +315,63 @@ export function layerSvgBody(map: L.Map, layer: BakeLayer): { body: string; coun
     parts.push(`<path d="${d.join("")}"${fill}${stroke}/>`);
   }
   parts.push(...marks);
-  return { body: parts.length ? `<g id="${escXml(layer.name)}">${parts.join("")}</g>` : "", count };
+  return { body: parts.length ? `<g id="layer-${xmlId(layer.name)}">${parts.join("")}</g>` : "", count, skipped };
 }
 
-export function svgDoc(W: number, H: number, body: string): string {
+/** clipId: SVG 마다 고유해야 한다 (같은 슬라이드에 여러 SVG 가 있을 때 id 충돌 방지, L7) */
+export function svgDoc(W: number, H: number, body: string, clipId = "frame"): string {
+  const id = xmlId(clipId);
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
-    `<defs><clipPath id="frame"><rect x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>` +
-    `<g clip-path="url(#frame)">${body}</g></svg>`
+    `<defs><clipPath id="${id}"><rect x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>` +
+    `<g clip-path="url(#${id})">${body}</g></svg>`
   );
+}
+
+/* ---------- 지오메트리 정리 (L5) ---------- */
+
+export function isEmptyGeometry(g: Geometry | null | undefined): boolean {
+  if (!g) return true;
+  switch (g.type) {
+    case "Point":
+      return !Array.isArray(g.coordinates) || g.coordinates.length < 2 || !Number.isFinite(g.coordinates[0]) || !Number.isFinite(g.coordinates[1]);
+    case "MultiPoint":
+    case "LineString":
+      return !g.coordinates?.length;
+    case "MultiLineString":
+    case "Polygon":
+      return !g.coordinates?.length || g.coordinates.every((r) => !r.length);
+    case "MultiPolygon":
+      return !g.coordinates?.length || g.coordinates.every((p) => !p.length || p.every((r) => !r.length));
+    case "GeometryCollection":
+      return !g.geometries?.length || g.geometries.every(isEmptyGeometry);
+  }
+  return true;
+}
+
+const flatCache = new WeakMap<import("geojson").FeatureCollection, import("geojson").FeatureCollection>();
+/** GeometryCollection 을 멤버별 피처로 펼친 사본 (없으면 원본 그대로). 원본 객체 기준으로 캐시 */
+export function flattenCollections(fc: import("geojson").FeatureCollection): import("geojson").FeatureCollection {
+  const hit = flatCache.get(fc);
+  if (hit) return hit;
+  let any = false;
+  const out: Feature[] = [];
+  const walk = (f: Feature, g: Geometry | null) => {
+    if (g && g.type === "GeometryCollection") {
+      for (const m of g.geometries) walk(f, m);
+      return;
+    }
+    out.push(g === f.geometry ? f : { ...f, geometry: g as Geometry });
+  };
+  for (const f of fc.features) {
+    if (f.geometry?.type === "GeometryCollection") {
+      any = true;
+      walk(f, f.geometry);
+    } else out.push(f);
+  }
+  const res = any ? { ...fc, features: out } : fc;
+  flatCache.set(fc, res);
+  return res;
 }
 
 /* ---------- 라벨 ---------- */
@@ -368,6 +423,11 @@ function anchorOf(g: Geometry, proj: Proj): { x: number; y: number; weight: numb
       const c = big[Math.floor(big.length / 2)];
       return { ...proj(c[0], c[1]), weight: big.length };
     }
+    case "MultiPoint": {
+      const c = g.coordinates[0];
+      if (!c) return null;
+      return { ...proj(c[0], c[1]), weight: 1 };
+    }
     default:
       return null;
   }
@@ -380,16 +440,16 @@ export function placeDataLabels(map: L.Map, layers: BakeLayer[], W: number, H: n
   layers.forEach((layer, li) => {
     const lb = layer.style.label;
     if (!lb.field) return;
-    for (const f of layer.data.features) {
+    for (const f of flattenCollections(layer.data).features) {
       const raw = f.properties?.[lb.field];
       if (raw === null || raw === undefined || raw === "") continue;
       const g = f.geometry;
-      if (!g) continue;
+      if (!g || isEmptyGeometry(g)) continue;
       const a = anchorOf(g, proj);
       if (!a || !Number.isFinite(a.x)) continue;
       if (a.x < -50 || a.y < -50 || a.x > W + 50 || a.y > H + 50) continue;
       cands.push({
-        text: String(raw),
+        text: stripInvalidXml(String(raw)),
         x: a.x,
         y: a.y,
         fontSize: lb.size,
@@ -424,16 +484,55 @@ export function labelsSvgBody(placed: PlacedLabel[]): string {
 
 /* ---------- 배경지도 ---------- */
 
-/**
- * 미리보기 지도의 타일 <img> 들을 캔버스(가상 크기 × scale)에 합성.
- * 미리보기는 CSS transform 으로 축소되어 있으므로 getBoundingClientRect 차이를 시각 배율로 나눈다.
- */
-export async function captureBasemapV2(map: L.Map, scale = 2): Promise<{ png: string; tiles: number }> {
+export type BasemapCapture = { png: string; tiles: number; /** 프레임과 겹치지만 로드되지 않은(실패·미완료) 타일 수 */ bad: number };
+
+const tileOk = (img: HTMLImageElement) => img.complete && img.naturalWidth > 0;
+
+function frameTiles(map: L.Map, roots?: HTMLElement[]): { img: HTMLImageElement; x: number; y: number; w: number; h: number }[] {
   const container = map.getContainer();
   const W = container.offsetWidth;
   const H = container.offsetHeight;
   const cRect = container.getBoundingClientRect();
-  const vs = cRect.width / W || 1; // 시각 배율
+  const vs = cRect.width / W || 1;
+  const out: { img: HTMLImageElement; x: number; y: number; w: number; h: number }[] = [];
+  for (const img of Array.from(container.querySelectorAll<HTMLImageElement>(".leaflet-tile-pane img.leaflet-tile"))) {
+    if (roots ? !roots.some((r) => r.contains(img)) : img.closest(".sm-hires")) continue; // 고해상도 임시 레이어는 일반 캡처에서 제외
+    const r = img.getBoundingClientRect();
+    const x = (r.left - cRect.left) / vs;
+    const y = (r.top - cRect.top) / vs;
+    const w = r.width / vs;
+    const h = r.height / vs;
+    if (x + w < 0 || x > W || y + h < 0 || y > H) continue;
+    out.push({ img, x, y, w, h });
+  }
+  return out;
+}
+
+/** 로드 실패/미완료 타일을 한 번 다시 요청하고 완료를 기다린다. 남은 불량 타일 수를 돌려준다 (M3) */
+export async function retryBadTiles(map: L.Map, timeoutMs = 6000): Promise<number> {
+  const bad = frameTiles(map).filter((t) => !tileOk(t.img));
+  if (!bad.length) return 0;
+  for (const { img } of bad) {
+    const src = img.src;
+    if (!src) continue;
+    img.src = src + (src.includes("?") ? "&" : "?") + "retry=1";
+  }
+  const t0 = Date.now();
+  while (Date.now() - t0 < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 150));
+    if (bad.every((t) => tileOk(t.img))) break;
+  }
+  return frameTiles(map).filter((t) => !tileOk(t.img)).length;
+}
+
+/**
+ * 미리보기 지도의 타일 <img> 들을 캔버스(가상 크기 × scale)에 합성.
+ * 미리보기는 CSS transform 으로 축소되어 있으므로 getBoundingClientRect 차이를 시각 배율로 나눈다.
+ */
+export async function captureBasemapV2(map: L.Map, scale = 2, roots?: HTMLElement[]): Promise<BasemapCapture> {
+  const container = map.getContainer();
+  const W = container.offsetWidth;
+  const H = container.offsetHeight;
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(W * scale);
   canvas.height = Math.round(H * scale);
@@ -443,16 +542,13 @@ export async function captureBasemapV2(map: L.Map, scale = 2): Promise<{ png: st
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, W, H);
   ctx.imageSmoothingQuality = "high";
-  const tiles = Array.from(container.querySelectorAll<HTMLImageElement>(".leaflet-tile-pane img.leaflet-tile"));
   let drawn = 0;
-  for (const img of tiles) {
-    if (!img.complete || img.naturalWidth === 0) continue;
-    const r = img.getBoundingClientRect();
-    const x = (r.left - cRect.left) / vs;
-    const y = (r.top - cRect.top) / vs;
-    const w = r.width / vs;
-    const h = r.height / vs;
-    if (x + w < 0 || x > W || y + h < 0 || y > H) continue;
+  let bad = 0;
+  for (const { img, x, y, w, h } of frameTiles(map, roots)) {
+    if (!tileOk(img)) {
+      bad++;
+      continue;
+    }
     const layerEl = img.closest(".leaflet-layer") as HTMLElement | null;
     const op = layerEl ? Number(getComputedStyle(layerEl).opacity || "1") : 1;
     ctx.globalAlpha = Number.isFinite(op) ? op : 1;
@@ -462,8 +558,60 @@ export async function captureBasemapV2(map: L.Map, scale = 2): Promise<{ png: st
   }
   ctx.globalAlpha = 1;
   try {
-    return { png: canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""), tiles: drawn };
+    return { png: canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""), tiles: drawn, bad };
   } catch {
     throw new Error("배경지도 캡처가 브라우저 보안(CORS)으로 막혔습니다. dev 서버 타일 프록시/crossOrigin 설정을 확인하세요.");
+  }
+}
+
+/**
+ * 2× 고해상도 배경지도 (L3): 같은 지도에 "한 줌 레벨 더 높은" 타일 레이어(zoomOffset +1, 타일 크기 절반)를 임시로 얹어
+ * 실제로 4배 많은 타일을 받아 캡처한다 (단순 확대가 아님). 원본이 그 줌을 지원하지 않거나 타일이 하나라도 실패하면 null → 호출자가 1× 로 대체.
+ * 글자가 없는 배경지도(hiResOk)에만 쓴다. 임시 레이어는 기본 레이어 아래(z-index 0)에 두어 화면에는 보이지 않는다.
+ */
+export async function captureHiRes(map: L.Map, bm: Basemap, tileScale: number, timeoutMs = 15000): Promise<BasemapCapture | null> {
+  if (bm.kind !== "raster" || !bm.hiResOk) return null; // 글자가 구워진 타일은 z+1 로 받으면 글자가 절반 크기가 되어 WYSIWYG 가 깨진다
+  const tz = Math.round(map.getZoom());
+  if (tz + 1 > bm.maxNativeZoom) return null;
+  const layers: L.TileLayer[] = [];
+  try {
+    for (const url of [bm.url, ...(bm.overlayUrl ? [bm.overlayUrl] : [])]) {
+      const t = L.tileLayer(url, {
+        tileSize: tilePx(tileScale) / 2,
+        zoomOffset: 1,
+        maxNativeZoom: bm.maxNativeZoom - 1,
+        maxZoom: 21,
+        subdomains: bm.subdomains ?? "abc",
+        crossOrigin: TILE_CROSS_ORIGIN,
+        keepBuffer: 0,
+        className: "sm-hires",
+      });
+      t.addTo(map);
+      t.setZIndex(0);
+      layers.push(t);
+    }
+    await Promise.all(
+      layers.map(
+        (t) =>
+          new Promise<void>((resolve) => {
+            let done = false;
+            const fin = () => {
+              if (!done) {
+                done = true;
+                resolve();
+              }
+            };
+            t.once("load", fin);
+            setTimeout(fin, timeoutMs);
+          }),
+      ),
+    );
+    const roots = layers.map((t) => t.getContainer()).filter(Boolean) as HTMLElement[];
+    const cap = await captureBasemapV2(map, 2, roots);
+    return cap.bad > 0 || cap.tiles === 0 ? null : cap;
+  } catch {
+    return null;
+  } finally {
+    layers.forEach((t) => map.removeLayer(t));
   }
 }

@@ -3,14 +3,18 @@
  *  - PowerPoint: Office.context.document.settings (pptx 와 함께 이동)
  *      slidemap.index = { order: string[] }, slidemap.map.<id> = MapDoc, slidemap.layer.<layerId> = FeatureCollection
  *  - 브라우저: localStorage (접두어 `slidemap:dev:`)
- *  - 전체 JSON 크기를 추적하고 8MB 초과 시 경고 (문서 settings 용량 한도는 [확인 필요])
+ *  - 전체 JSON 크기(UTF-8 바이트)를 추적하고 2MB 초과 시 경고 (문서 settings 의 실제 용량 한도는 [확인 필요] → 보수적으로 낮게 경고)
  */
 import type { FeatureCollection } from "geojson";
 
 import { diag } from "@/pane/diag";
 import type { MapDoc } from "@/pane/model";
 
-export const SIZE_WARN_BYTES = 8 * 1024 * 1024;
+export const SIZE_WARN_BYTES = 2 * 1024 * 1024;
+const utf8Len = (() => {
+  const enc = typeof TextEncoder !== "undefined" ? new TextEncoder() : null;
+  return (s: string) => (enc ? enc.encode(s).length : s.length);
+})();
 const LS_PREFIX = "slidemap:dev:";
 const KEY_INDEX = "slidemap.index";
 const keyMap = (id: string) => `slidemap.map.${id}`;
@@ -95,10 +99,16 @@ export function compactFc(fc: FeatureCollection): FeatureCollection {
 export type DocStore = {
   kind: "office" | "browser";
   listMaps(): MapDoc[];
-  saveMap(doc: MapDoc): void;
+  /** lazy = 자주 바뀌는 값(보기 위치 등)이라 늦게(2.5초) 저장 */
+  saveMap(doc: MapDoc, opts?: { lazy?: boolean }): void;
+  /** 대기 중인 저장을 즉시 실행 */
+  flush(): Promise<void>;
   deleteMap(doc: MapDoc): void;
   getLayer(id: string): FeatureCollection | null;
-  saveLayer(id: string, fc: FeatureCollection): void;
+  /** 저장용으로 좌표를 줄인 사본을 돌려준다 */
+  saveLayer(id: string, fc: FeatureCollection): FeatureCollection;
+  /** 이번 세션에서는 원본 전체를 쓰고(저장은 단순화본) 싶을 때 */
+  setSessionLayer(id: string, fc: FeatureCollection): void;
   deleteLayer(id: string): void;
   totalBytes(): number;
   onStatus(cb: (s: { saving: boolean; error: string | null; bytes: number }) => void): () => void;
@@ -128,11 +138,16 @@ export function createDocStore(inOffice: boolean, normalize: (raw: Partial<MapDo
 
   const cache = new Map<string, unknown>();
 
-  const schedule = () => {
+  let deadline = 0;
+  const schedule = (ms = 600) => {
+    const at = Date.now() + ms;
+    if (timer && deadline <= at) return; // 이미 더 빠른 저장이 예약됨
     if (timer) clearTimeout(timer);
-    timer = setTimeout(flush, 600);
+    deadline = at;
+    timer = setTimeout(flush, ms);
   };
   async function flush() {
+    if (timer) clearTimeout(timer);
     timer = null;
     emit(true, null);
     try {
@@ -151,12 +166,12 @@ export function createDocStore(inOffice: boolean, normalize: (raw: Partial<MapDo
       emit(false, msg);
     }
   }
-  const put = (key: string, value: unknown) => {
+  const put = (key: string, value: unknown, ms = 600) => {
     cache.set(key, value);
-    sizes.set(key, JSON.stringify(value).length);
+    sizes.set(key, utf8Len(JSON.stringify(value)));
     dirty.add(key);
     removed.delete(key);
-    schedule();
+    schedule(ms);
   };
   const del = (key: string) => {
     cache.delete(key);
@@ -174,12 +189,12 @@ export function createDocStore(inOffice: boolean, normalize: (raw: Partial<MapDo
     const doc = normalize({ ...raw, id });
     maps.push(doc);
     cache.set(keyMap(id), doc);
-    sizes.set(keyMap(id), JSON.stringify(doc).length);
+    sizes.set(keyMap(id), utf8Len(JSON.stringify(doc)));
     for (const l of doc.layers) {
       const fc = be.get(keyLayer(l.id)) as FeatureCollection | undefined;
       if (fc) {
         layerCache.set(l.id, fc);
-        sizes.set(keyLayer(l.id), JSON.stringify(fc).length);
+        sizes.set(keyLayer(l.id), utf8Len(JSON.stringify(fc)));
         cache.set(keyLayer(l.id), fc);
       }
     }
@@ -187,18 +202,23 @@ export function createDocStore(inOffice: boolean, normalize: (raw: Partial<MapDo
   order = maps.map((m) => m.id);
 
   // 페이지 닫기 직전 즉시 저장
-  if (typeof window !== "undefined") window.addEventListener("pagehide", () => timer && void flush());
+  if (typeof window !== "undefined") {
+    window.addEventListener("pagehide", () => timer && void flush());
+    document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && timer && void flush());
+  }
 
   return {
     kind: be.kind,
     listMaps: () => maps.slice(),
-    saveMap(doc) {
+    saveMap(doc, opts) {
+      if (doc.futureV) return; // 새 버전이 만든 문서는 덮어쓰지 않는다 (읽기 전용)
       if (!order.includes(doc.id)) {
         order.push(doc.id);
         dirty.add(KEY_INDEX);
       }
-      put(keyMap(doc.id), doc);
+      put(keyMap(doc.id), doc, opts?.lazy ? 2500 : 600);
     },
+    flush,
     deleteMap(doc) {
       order = order.filter((i) => i !== doc.id);
       dirty.add(KEY_INDEX);
@@ -214,6 +234,10 @@ export function createDocStore(inOffice: boolean, normalize: (raw: Partial<MapDo
       const c = compactFc(fc);
       layerCache.set(id, c);
       put(keyLayer(id), c);
+      return c;
+    },
+    setSessionLayer(id, fc) {
+      layerCache.set(id, fc);
     },
     deleteLayer(id) {
       layerCache.delete(id);

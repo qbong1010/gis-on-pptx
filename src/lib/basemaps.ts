@@ -39,6 +39,8 @@ export type Basemap = {
   attribution: string;
   maxNativeZoom: number;
   requiresKey?: boolean;
+  /** 타일에 글자가 구워져 있지 않아, 한 줌 위 타일(2× 밀도)로 캡처해도 글자 크기가 변하지 않는 배경지도 */
+  hiResOk?: boolean;
 };
 
 export type BasemapMeta = Pick<Basemap, "id" | "label" | "requiresKey" | "kind">;
@@ -82,6 +84,7 @@ export function buildBasemaps(key: string): Basemap[] {
       subdomains: "abcd",
       attribution: CARTO_ATTR,
       maxNativeZoom: 20,
+      hiResOk: true,
     },
     {
       id: "carto-light-all",

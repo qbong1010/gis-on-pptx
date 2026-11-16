@@ -32,7 +32,8 @@ export function Toggle({
         data-testid={testId}
         disabled={disabled}
         onClick={() => onChange(!checked)}
-        className={cn("relative h-4 w-7 shrink-0 rounded-full transition-colors", checked ? "bg-primary" : "bg-input")}
+        aria-label={typeof label === "string" ? label : undefined}
+        className={cn("relative h-4 w-7 shrink-0 rounded-full transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring", checked ? "bg-primary" : "bg-input")}
       >
         <span className={cn("absolute top-0.5 size-3 rounded-full bg-white shadow transition-all", checked ? "left-[14px]" : "left-0.5")} />
       </button>

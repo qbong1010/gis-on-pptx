@@ -12,17 +12,20 @@ export function ColorInput({ value, onChange, className }: { value: string; onCh
             key={c}
             type="button"
             title={c}
+            aria-label={`색 ${c}`}
+            aria-pressed={value.toLowerCase() === c}
             onClick={() => onChange(c)}
-            className={cn("size-[15px] rounded-[3px] border", value.toLowerCase() === c ? "border-foreground ring-1 ring-foreground" : "border-border")}
+            className={cn("size-[16px] rounded-[3px] border focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring", value.toLowerCase() === c ? "border-foreground ring-1 ring-foreground" : "border-border")}
             style={{ background: c }}
           />
         ))}
       </div>
-      <label className="relative size-6 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border" title="직접 선택" style={{ background: value }}>
+      <label className="relative size-6 shrink-0 cursor-pointer overflow-hidden rounded-md border border-border focus-within:outline-2 focus-within:outline-ring" title="직접 선택" style={{ background: value }}>
         <input
           type="color"
           value={/^#[0-9a-f]{6}$/i.test(value) ? value : "#000000"}
           onChange={(e) => onChange(e.target.value)}
+          aria-label="색 직접 선택"
           className="absolute inset-0 cursor-pointer opacity-0"
         />
       </label>
