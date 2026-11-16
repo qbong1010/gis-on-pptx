@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Slide Map — PowerPoint Content Add-in manifest (XML manifest, schema 1.1)
+
+  * 콘텐츠 애드인은 루트 <OfficeApp xsi:type="ContentApp"> 로 정의한다.
+    (TaskPane 애드인의 <ExtensionPoint> 리본 명령 구조는 콘텐츠 애드인에서는 쓰지 않는다)
+  * 삽입 경로: PowerPoint > 삽입 > 추가 기능(내 추가 기능) > 개발자 추가 기능 > Slide Map
+  * 슬라이드 위에 RequestedWidth x RequestedHeight(px) 크기의 박스로 들어온다. 이후 마우스로 리사이즈 가능.
+-->
+<OfficeApp
+  xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+  xmlns:bt="http://schemas.microsoft.com/office/officeappbasictypes/1.0"
+  xsi:type="ContentApp">
+
+  <Id>bd8deeef-efd4-492e-bdcf-49bafcec8d9f</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>Dohwa Urban Planning</ProviderName>
+  <DefaultLocale>ko-KR</DefaultLocale>
+  <DisplayName DefaultValue="Slide Map" />
+  <Description DefaultValue="슬라이드 위에서 지도를 패닝/줌하고 GeoJSON을 올린 뒤 PPT 도형으로 정착(Bake)합니다." />
+  <IconUrl DefaultValue="https://localhost:3000/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://localhost:3000/assets/icon-64.png" />
+  <SupportUrl DefaultValue="https://localhost:3000/" />
+
+  <!-- 애드인 iframe 안에서 탐색/요청할 외부 도메인 -->
+  <AppDomains>
+    <AppDomain>https://localhost:3000</AppDomain>
+    <AppDomain>https://tile.openstreetmap.org</AppDomain>
+    <AppDomain>https://api.vworld.kr</AppDomain>
+  </AppDomains>
+
+  <Hosts>
+    <Host Name="Presentation" />
+  </Hosts>
+
+  <!-- 1.1만 필수로 걸고, SVG 삽입(ImageCoercion 1.2)은 런타임에 체크 후 PNG로 폴백한다.
+       1.2를 여기서 필수로 걸면 구버전 PowerPoint에서는 애드인 목록에 아예 안 뜬다. -->
+  <Requirements>
+    <Sets DefaultMinVersion="1.1">
+      <Set Name="ImageCoercion" MinVersion="1.1" />
+    </Sets>
+  </Requirements>
+
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://localhost:3000/index.html" />
+    <RequestedWidth>800</RequestedWidth>
+    <RequestedHeight>450</RequestedHeight>
+  </DefaultSettings>
+
+  <Permissions>ReadWriteDocument</Permissions>
+
+  <!-- 애드인이 로드되지 않은 환경(뷰어, 인쇄 등)에서도 마지막 화면 스냅샷이 보이도록 -->
+  <AllowSnapshot>true</AllowSnapshot>
+</OfficeApp>

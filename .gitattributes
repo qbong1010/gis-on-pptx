@@ -1,0 +1,9 @@
+* text=auto
+*.cmd text eol=crlf
+*.shp binary
+*.shx binary
+*.dbf binary
+*.zip binary
+*.gpkg binary
+*.png binary
+*.pptx binary

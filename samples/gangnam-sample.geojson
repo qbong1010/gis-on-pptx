@@ -1,0 +1,11 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    { "type": "Feature", "properties": { "name": "계획구역", "용도": "일반상업지역" },
+      "geometry": { "type": "Polygon", "coordinates": [[[127.0255,37.4995],[127.0298,37.5002],[127.0310,37.4972],[127.0284,37.4958],[127.0250,37.4966],[127.0255,37.4995]]] } },
+    { "type": "Feature", "properties": { "name": "가로축", "구분": "보행축" },
+      "geometry": { "type": "LineString", "coordinates": [[127.0232,37.4985],[127.0276,37.4979],[127.0322,37.4973]] } },
+    { "type": "Feature", "properties": { "name": "강남역" },
+      "geometry": { "type": "Point", "coordinates": [127.0276,37.4979] } }
+  ]
+}
