@@ -1,51 +1,43 @@
-# Slide Map — PowerPoint 콘텐츠 애드인 MVP
+# Slide Map — PowerPoint 지도 애드인 (v2)
 
-> 작업 이력: `docs/DEVLOG.md` · 의사결정: `docs/DECISIONS.md` · 작업 규칙: `CLAUDE.md`
->
-> 지원 형식: GeoJSON, SHP(.zip 또는 .shp+.dbf+.prj 함께) — 한국 좌표계(5186/5174/5179 등) 자동 변환
+> 작업 이력 `docs/DEVLOG.md` · 의사결정 `docs/DECISIONS.md` · 구조 `docs/ARCHITECTURE.md`
+> 설치(회사/집 PC) `docs/INSTALL.md` · 서비스화 기획 `docs/SERVICE_PLAN.md` · QGIS 연동 `qgis-plugin/README.md`
 
-슬라이드 본문 위에 지도 박스를 띄워 패닝/줌 → GeoJSON 올리기 → PPT 도형으로 정착(Bake)하는 콘텐츠 애드인.
+PowerPoint 오른쪽 패널 하나로 지도를 만들고, 슬라이드에는 **편집 가능한 객체**로 넣는 애드인.
 
-## 0. 준비
-- Node.js 20+ (22 권장)
-- Windows PowerPoint (Microsoft 365) 또는 PowerPoint on the web
-
-## 1. 설치 & 실행 (Step 1)
-
-```bash
-npm install
-npm run certs        # 최초 1회: localhost HTTPS 인증서 생성 + 신뢰 등록 (Windows는 보안 경고 '예')
-npm run dev          # https://localhost:3000 에서 서빙
+```
+[패널]  지도 추가 → 파일 끌어넣기(GeoJSON·SHP·GPKG·DXF) → 스타일·배경지도·방위표/축척/범례 → [슬라이드에 반영]
+[슬라이드]  배경지도(PNG 또는 편집형 벡터 SVG) · 레이어별 SVG · 네이티브 텍스트 라벨 · 범례 · 축척 · 방위표  (각각 분리된 객체)
 ```
 
-브라우저에서 https://localhost:3000 을 열면 "브라우저(Office 아님)" 상태로 점검 화면이 보인다. → 서버 OK.
+- 슬라이드의 지도 객체를 클릭하면 패널이 그 지도를 자동으로 고른다. 배경지도 그림을 슬라이드에서 늘리거나 옮긴 뒤 다시 반영하면 그 영역으로 다시 그린다. 옮겨 둔 방위표·범례 위치는 유지된다.
+- 지도 상태는 pptx 안에 저장된다 → 파일만 옮기면 다른 PC 에서도 이어서 편집.
+- 한국 좌표계(5186/5174/5179/2097 등) 자동 인식·변환. 파일당 200MB 까지(30MB 이상 경고), 무거운 처리는 백그라운드(웹 워커).
+- 배경지도: VWorld 4종, OSM, CARTO(라벨 있음/없음), 흰 배경, **편집형 벡터 3종**(도로·건물은 도형, 지명·도로명은 회전된 텍스트 상자).
+- PowerPoint 에서 SVG 객체 우클릭 → **도형으로 변환** 하면 선·면을 하나하나 편집할 수 있다.
 
-## 2. PowerPoint에 사이드로드
+## 개발 실행 (Windows)
+1. `1_setup.cmd` (최초 1회 / 패키지가 바뀌면 다시) — npm install + localhost 인증서
+2. PowerPoint 를 닫고 `2_start.cmd` — 작업창 애드인 등록 + dev 서버(https://localhost:3000)
+3. PowerPoint → **홈 탭 오른쪽 [Slide Map]** 버튼
+- 끝낼 때 `3_stop.cmd` (등록 해제)
+- `.env.local` 에 `VITE_VWORLD_KEY=...` (개발용 키) — 패널 설정에서도 입력 가능
 
-### A. Windows 데스크톱 (권장)
-```bash
-npm run sideload       # dev 서버 실행 + manifest 등록 + PowerPoint 실행
+## 배포판(설치형) 만들기 — 자세한 건 `docs/INSTALL.md`
 ```
-PowerPoint가 열리면: **삽입 → 추가 기능 가져오기(또는 내 추가 기능) → 개발자 추가 기능 → Slide Map**
-→ 슬라이드 위에 800×450 박스로 삽입된다.
+npm run build
+node scripts/make-manifest.mjs https://<호스팅 주소>
+```
+`dist/` 를 정적 호스팅에 올리고, 각 PC 에서 `install\install-addin.cmd https://<호스팅 주소>/manifest.xml` 1번.
 
-종료/등록 해제: `npm run sideload:stop`
+## 테스트
+| 대상 | 명령 |
+|---|---|
+| 패널 E2E (브라우저 모드, 모의 슬라이드) | `python tests/core/e2e_pane.py 380` |
+| **실제 PowerPoint E2E** (원격 디버깅 하네스, D-031) | `python tests/core/e2e_real.py` |
+| 가져오기 (GDAL 대비 오차) | `python tests/import/run_import_tests.py`, `run_regress_tests.py` |
+| 벡터 배경지도 | `python tests/vector/test_vector_basemap.py` |
+| QGIS 플러그인 | `tests\qgis\run_tests.cmd` |
 
-### B. PowerPoint on the web
-`npm run dev` 실행 상태에서 → **삽입 → 추가 기능 → 내 추가 기능 관리 → 내 추가 기능 업로드 → manifest.xml**
-
-### C. Mac
-`manifest.xml` 을 `~/Library/Containers/com.microsoft.Powerpoint/Data/Documents/wef/` 에 복사 후 PowerPoint 재시작
-→ 삽입 → 추가 기능 → 내 추가 기능 → Slide Map
-
-## 3. Step 1 완료 기준
-점검 화면에서
-- `PowerPoint ContentApp 로드` = 지원
-- `ImageCoercion 1.2 (SVG 삽입)` = 지원
-- [테스트 SVG 슬라이드에 삽입] 클릭 → 슬라이드에 주황 폴리곤 SVG가 생기면 Bake 파이프라인 끝단까지 연결된 것.
-
-## 트러블슈팅
-- 박스가 하얗게만 뜸 → `npm run dev` 가 떠 있는지, https://localhost:3000 이 브라우저에서 인증서 경고 없이 열리는지 확인
-- 매니페스트 수정 후 반영 안 됨 → `npm run sideload:stop` 후 Office 캐시 삭제
-  (`%LOCALAPPDATA%\Microsoft\Office\16.0\Wef\` 폴더 삭제) → 다시 `npm run sideload`
-- 포트 변경 시 `vite.config.ts` 와 `manifest.xml` 의 3000 을 함께 바꿀 것
+## 레거시
+`index.html` / `src/App.tsx` / `manifest.xml` = v1 콘텐츠 애드인 지도 박스(슬라이드 위 살아있는 지도). 기본 등록하지 않음(`npm run register:legacy`). 결정 D-011 → D-029.

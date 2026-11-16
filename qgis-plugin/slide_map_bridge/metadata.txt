@@ -1,0 +1,16 @@
+[general]
+name=Slide Map Bridge
+qgisMinimumVersion=3.22
+description=QGIS 조판과 PowerPoint 슬라이드를 연결합니다 (Slide Map 연동).
+version=0.1.0
+author=Slide Map
+email=
+about=슬라이드를 QGIS 조판(인쇄 레이아웃)으로 재현해 가시성·선 굵기·글자 크기·카드 배치 여유를 확인하고, 완성한 지도를 PowerPoint 슬라이드의 지도 프레임 위치로 되돌려 넣습니다. Windows + Microsoft PowerPoint 필요.
+tracker=
+repository=
+tags=powerpoint,layout,print,slide
+homepage=
+category=Plugins
+icon=icons/slidemap.svg
+experimental=True
+deprecated=False
