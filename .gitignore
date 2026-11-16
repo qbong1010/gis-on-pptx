@@ -13,3 +13,4 @@ graft/
 tests/**/out/
 tests/**/out_before/
 __pycache__/
+tests/**/_tmp/

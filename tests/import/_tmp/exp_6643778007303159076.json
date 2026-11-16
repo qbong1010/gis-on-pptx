@@ -1,8 +1,0 @@
-{
-"type": "FeatureCollection",
-"name": "복합선",
-"xy_coordinate_resolution": 1e-10,
-"features": [
-{ "type": "Feature", "properties": { "이름": "복합선" }, "geometry": { "type": "MultiLineString", "coordinates": [ [ [ 126.97, 37.55 ], [ 126.98, 37.552 ], [ 126.99, 37.55 ] ], [ [ 126.97, 37.545 ], [ 126.99, 37.545 ] ] ] } }
-]
-}
