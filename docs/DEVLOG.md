@@ -4,6 +4,17 @@
 
 ---
 
+## 2026-11-17 04:30 — 배포판(설치형) 경로 실검증 + 설치 스크립트 버그 2건 수정
+- 목적: "회사·집 PC 에 한 번 설치" 경로(D-032)가 실제로 동작하는지 끝까지 확인.
+- 방법: 배포 빌드(`VITE_VWORLD_KEY_PUBLIC` 지정) → `make-manifest.mjs https://localhost:3001` → 프록시 없는 정적 HTTPS 서버로 서빙 → `install-addin.ps1 -ManifestUrl …` 로 설치 → 배포용 Id 로 작업창이 자동으로 열리는 문서로 실제 PowerPoint 실행 → `tests/core/e2e_real.py` 전체 실행.
+- 결과: **전 항목 통과** (지도 추가·반영·프레임 채택·H1/H4/M1/M6/M7/L6). 배포본은 dev 프록시 없이 VWorld 타일을 직접 CORS 로 받아 배경지도 캡처 성공 → 정적 호스팅만으로 동작함을 확인.
+- 발견·수정 (설치 스크립트)
+  1. `New-Item -Path <Developer 키> -Force` 가 **기존 키를 다시 만들어 다른 애드인 등록값·하위 키까지 삭제**(개발용 등록이 지워진 것으로 발견). → 키가 없을 때만 생성. 지워진 개발용 등록·디버거 끄기 하위 키·RuntimeLogging 은 원래 값으로 복구함.
+  2. PowerShell 5.1 이 BOM 없는 UTF-8 `.ps1` 을 ANSI 로 읽어 한글 메시지가 깨짐 → UTF-8 BOM 으로 저장.
+  - 추가: 설치 시 배포용 Id 의 "로드 시 웹 보기 중지" 디버거 팝업도 끔, 제거 스크립트가 하위 키까지 정리.
+- 정리: 테스트용 배포 등록(localhost:3001) 제거, PowerPoint 종료. 레지스트리는 개발용 등록만 남김.
+- 데모 파일: `Documents\SlideMap-backup\SlideMap-v2-실제반영결과.pptx` (실제 반영 결과 슬라이드), 처음 열려 있던 문서 백업: 같은 폴더 `open-presentation-1-….pptx`.
+
 ## 2026-11-17 03:50 — QGIS 연동(Slide Map Bridge 플러그인) + 독립 리뷰 수정
 - 요청: pptx 작업 중인 슬라이드를 QGIS 조판에 그대로 구현(어려우면 이미지 고정). 가시성·두께·글자 상대 크기·카드 오버레이 여유 판단 후 결과를 pptx 로.
 - 결정: D-036 (슬라이드 → 조판 3층(배경/지도/오버레이), 조판 → 슬라이드 PNG 삽입, 레이어 보내기)
