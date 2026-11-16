@@ -58,7 +58,29 @@ export function crsFromName(name: string | null | undefined): CrsDef | undefined
 /* .prj 매칭                                                            */
 /* ------------------------------------------------------------------ */
 
-type ProjParams = { projected: boolean; lat0: number; long0: number; k0: number; x0: number; y0: number; a: number };
+type ProjParams = {
+  projected: boolean;
+  /** 정규화한 투영 종류 (tmerc/utm/etmerc 는 모두 "tmerc") */
+  proj: string;
+  /** 데이텀 이름 (소문자, 없으면 "") */
+  datum: string;
+  lat0: number;
+  long0: number;
+  k0: number;
+  x0: number;
+  y0: number;
+  a: number;
+  b: number;
+  toMeter: number;
+};
+
+/** 투영 이름 정규화: 대소문자·구분자 무시, TM 계열 동의어 통합 */
+function normProj(name: string): string {
+  const n = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (/^(tmerc|utm|etmerc|transversemercator|gausskruger|gausskrueger)$/.test(n)) return "tmerc";
+  if (/^(merc|mercator|mercatorauxiliarysphere|popularvisualisationpseudomercator)$/.test(n)) return "merc";
+  return n;
+}
 
 function paramsOf(def: string): ProjParams | null {
   try {
@@ -68,6 +90,10 @@ function paramsOf(def: string): ProjParams | null {
     const projName = String(p.projName ?? "");
     return {
       projected: projName !== "longlat" && projName !== "identity",
+      proj: normProj(projName),
+      datum: String(p.datumCode ?? "").toLowerCase(),
+      b: num("b", num("a")),
+      toMeter: num("to_meter", 1),
       lat0: num("lat0"),
       long0: num("long0"),
       k0: num("k0", 1),
@@ -86,6 +112,13 @@ function close(a: number, b: number, tol: number) {
   return Math.abs(a - b) <= tol;
 }
 
+/** 경위도 레지스트리 항목별 허용 데이텀 이름(proj4 datumCode, 소문자) */
+const GEO_DATUM: Record<string, RegExp> = {
+  "EPSG:4326": /^(wgs_?(19)?84)$/,
+  "EPSG:4737": /^(korea_?2000|kgd_?2002|korean_?geodetic_?datum_?2000)$/,
+  "EPSG:4162": /^(korean_?(datum_?)?1985|korea_?1985|kgd_?1985)$/,
+};
+
 export type PrjMatch =
   | { kind: "registry"; crs: CrsDef }
   | { kind: "raw"; proj4: string; note: string }
@@ -102,6 +135,12 @@ export function matchPrj(prjText: string): PrjMatch {
     if (c) return { kind: "registry", crs: c };
   }
 
+  // ESRI Web Mercator (구체 기반 보조구) — proj4 가 타원체로 해석하는 것을 막고 3857 로 고정
+  if (/Mercator_Auxiliary_Sphere/i.test(wkt) && /Central_Meridian",\s*0(\.0*)?\]/i.test(wkt)) {
+    const c = getCrs("EPSG:3857");
+    if (c) return { kind: "registry", crs: c };
+  }
+
   const p = paramsOf(wkt);
   if (!p) return { kind: "none", note: ".prj 를 해석하지 못했습니다." };
 
@@ -109,7 +148,14 @@ export function matchPrj(prjText: string): PrjMatch {
   for (const { crs, p: r } of REG_PARAMS) {
     if (!r || r.projected !== p.projected) continue;
     if (!close(r.a, p.a, 1)) continue; // 타원체 (GRS80/WGS84 vs Bessel 구분)
-    if (!p.projected) return { kind: "registry", crs };
+    if (!close(r.b, p.b, 1)) continue; // 구체(3857)와 타원체 메르카토르 구분
+    if (!p.projected) {
+      // 경위도: 같은 타원체라도 데이텀이 다르면(예: GCS_Tokyo vs Korean 1985) 다른 좌표계 → 이름으로 확인
+      if (GEO_DATUM[crs.code]?.test(p.datum)) return { kind: "registry", crs };
+      continue;
+    }
+    if (r.proj !== p.proj) continue; // LCC·Mollweide 등이 매개변수만 같다고 TM 으로 오인되지 않도록
+    if (!close(r.toMeter, p.toMeter, 1e-9)) continue;
     if (
       close(r.lat0, p.lat0, 1e-6 * deg) &&
       close(r.long0, p.long0, 1e-6 * deg) &&
@@ -125,7 +171,7 @@ export function matchPrj(prjText: string): PrjMatch {
     kind: "raw",
     proj4: wkt,
     note: isBessel
-      ? "알려진 한국 좌표계와 일치하지 않는 Bessel 좌표계입니다. 데이텀 변환이 빠져 수백 m 어긋날 수 있습니다."
-      : "내장 목록에 없는 좌표계라 .prj 를 그대로 사용했습니다.",
+      ? "알려진 한국 좌표계와 일치하지 않는 Bessel 좌표계입니다(예: Tokyo 데이텀). 데이텀 변환이 빠져 수백 m 어긋날 수 있습니다."
+      : "내장 목록에 없는 좌표계라 .prj 를 그대로 사용했습니다. 위치가 어긋나면 [입력 좌표계]에서 직접 지정하세요.",
   };
 }

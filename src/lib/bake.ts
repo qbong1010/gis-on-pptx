@@ -10,6 +10,20 @@ import { bboxClip } from "@turf/turf";
 import type { Feature, Geometry, Polygon, MultiPolygon, LineString, MultiLineString, Position } from "geojson";
 
 import type { BakeOptions, BakePayload, LayerState } from "@/shared/protocol";
+import { placeLabels, type LabelCandidate, type PlacedLabel } from "@/lib/labels";
+import { haloText } from "@/lib/decorations";
+import {
+  buildCategories,
+  escapeXml as escXml,
+  featureKind,
+  markerSvg,
+  resolveStyle,
+  resolvedKey,
+  type Categories,
+  type GeomKind,
+  type LayerStyle,
+  type Resolved,
+} from "@/lib/style";
 
 /** SVG 좌표 소수 2자리 (0.01px) — 정밀도 손실로 인한 흔들림 방지 */
 const r2 = (v: number) => Math.round(v * 100) / 100;
@@ -212,4 +226,244 @@ export async function makeBakePayload(map: L.Map, layers: LayerState[], options:
     }
   }
   return { widthPx: size.x, heightPx: size.y, svg, png, featureCount, notes };
+}
+
+
+/* ================================================================== */
+/* v2 — 레이어별 SVG / 라벨 / 배경지도 (패널 편집기용)                     */
+/* ================================================================== */
+
+export type BakeLayer = {
+  id: string;
+  name: string;
+  style: LayerStyle;
+  data: import("geojson").FeatureCollection;
+  kind?: GeomKind | "mixed";
+};
+
+/** 지도 중심 기준 1px 당 미터 (축척 계산용). CSS 배율과 무관 (Leaflet 내부 좌표 사용) */
+export function metersPerPx(map: L.Map): number {
+  const s = map.getSize();
+  const cy = s.y / 2;
+  const a = map.containerPointToLatLng([s.x / 2 - 50, cy]);
+  const b = map.containerPointToLatLng([s.x / 2 + 50, cy]);
+  return map.distance(a, b) / 100;
+}
+
+function viewBbox(map: L.Map): [number, number, number, number] {
+  const b = map.getBounds();
+  const padX = (b.getEast() - b.getWest()) * 0.03;
+  const padY = (b.getNorth() - b.getSouth()) * 0.03;
+  return [b.getWest() - padX, b.getSouth() - padY, b.getEast() + padX, b.getNorth() + padY];
+}
+
+/** 레이어 하나의 SVG 본문(<g>…</g>) — 스타일은 resolveStyle 로 미리보기와 동일 */
+export function layerSvgBody(map: L.Map, layer: BakeLayer): { body: string; count: number } {
+  const bbox = viewBbox(map);
+  const proj = makeProjector(map);
+  const pt = (c: Position) => {
+    const p = proj(c[0], c[1]);
+    return `${r2(p.x)} ${r2(p.y)}`;
+  };
+  const ring = (cs: Position[], close: boolean) => (cs.length ? `M${cs.map(pt).join("L")}${close ? "Z" : ""}` : "");
+  const cats: Categories | null = buildCategories(layer.data, layer.style);
+
+  // 같은 스타일끼리 한 path 로 묶는다
+  const paths = new Map<string, { r: Resolved; kind: GeomKind; d: string[] }>();
+  const marks: string[] = [];
+  let count = 0;
+  for (const f of layer.data.features) {
+    const kind = featureKind(f.geometry);
+    if (!kind) continue;
+    const g = clipFeature(f, bbox);
+    if (!g) continue;
+    count++;
+    const r = resolveStyle(layer.style, kind, f.properties as Record<string, unknown> | null, cats);
+    if (kind === "point") {
+      const pts = g.type === "Point" ? [g.coordinates] : g.type === "MultiPoint" ? g.coordinates : [];
+      for (const p of pts) {
+        const q = proj(p[0], p[1]);
+        marks.push(markerSvg(r, q.x, q.y));
+      }
+      continue;
+    }
+    let d = "";
+    if (g.type === "Polygon") d = g.coordinates.map((x) => ring(x, true)).join("");
+    else if (g.type === "MultiPolygon") d = g.coordinates.map((p) => p.map((x) => ring(x, true)).join("")).join("");
+    else if (g.type === "LineString") d = ring(g.coordinates, false);
+    else if (g.type === "MultiLineString") d = g.coordinates.map((l) => ring(l, false)).join("");
+    if (!d) continue;
+    const key = kind + resolvedKey(r);
+    const e = paths.get(key) ?? { r, kind, d: [] };
+    e.d.push(d);
+    paths.set(key, e);
+  }
+  const parts: string[] = [];
+  for (const { r, kind, d } of paths.values()) {
+    const stroke =
+      r.strokeWidth > 0
+        ? ` stroke="${r.stroke}" stroke-opacity="${r.strokeOpacity}" stroke-width="${r.strokeWidth}" stroke-linejoin="round" stroke-linecap="${r.cap}"${r.dashArray ? ` stroke-dasharray="${r.dashArray}"` : ""}`
+        : "";
+    const fill = kind === "polygon" && r.fill ? ` fill="${r.fill}" fill-opacity="${r.fillOpacity}" fill-rule="evenodd"` : ' fill="none"';
+    parts.push(`<path d="${d.join("")}"${fill}${stroke}/>`);
+  }
+  parts.push(...marks);
+  return { body: parts.length ? `<g id="${escXml(layer.name)}">${parts.join("")}</g>` : "", count };
+}
+
+export function svgDoc(W: number, H: number, body: string): string {
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
+    `<defs><clipPath id="frame"><rect x="0" y="0" width="${W}" height="${H}"/></clipPath></defs>` +
+    `<g clip-path="url(#frame)">${body}</g></svg>`
+  );
+}
+
+/* ---------- 라벨 ---------- */
+
+type Proj = (lng: number, lat: number) => { x: number; y: number };
+
+function anchorOf(g: Geometry, proj: Proj): { x: number; y: number; weight: number } | null {
+  const avg = (cs: Position[]) => {
+    let x = 0;
+    let y = 0;
+    for (const c of cs) {
+      const p = proj(c[0], c[1]);
+      x += p.x;
+      y += p.y;
+    }
+    return { x: x / cs.length, y: y / cs.length };
+  };
+  const bboxArea = (cs: Position[]) => {
+    let a = Infinity;
+    let b = Infinity;
+    let c = -Infinity;
+    let d = -Infinity;
+    for (const q of cs) {
+      const p = proj(q[0], q[1]);
+      a = Math.min(a, p.x);
+      b = Math.min(b, p.y);
+      c = Math.max(c, p.x);
+      d = Math.max(d, p.y);
+    }
+    return (c - a) * (d - b);
+  };
+  switch (g.type) {
+    case "Point": {
+      const p = proj(g.coordinates[0], g.coordinates[1]);
+      return { ...p, weight: 1 };
+    }
+    case "Polygon":
+      return { ...avg(g.coordinates[0]), weight: bboxArea(g.coordinates[0]) };
+    case "MultiPolygon": {
+      const big = [...g.coordinates].sort((a, b) => b[0].length - a[0].length)[0];
+      return { ...avg(big[0]), weight: bboxArea(big[0]) };
+    }
+    case "LineString": {
+      const c = g.coordinates[Math.floor(g.coordinates.length / 2)];
+      return { ...proj(c[0], c[1]), weight: g.coordinates.length };
+    }
+    case "MultiLineString": {
+      const big = [...g.coordinates].sort((a, b) => b.length - a.length)[0];
+      const c = big[Math.floor(big.length / 2)];
+      return { ...proj(c[0], c[1]), weight: big.length };
+    }
+    default:
+      return null;
+  }
+}
+
+/** 보이는 레이어들의 라벨을 충돌 제거하며 배치. 결과의 kind = "data:<layerId>" (layers 는 아래→위 순서) */
+export function placeDataLabels(map: L.Map, layers: BakeLayer[], W: number, H: number): PlacedLabel[] {
+  const proj = makeProjector(map);
+  const cands: LabelCandidate[] = [];
+  layers.forEach((layer, li) => {
+    const lb = layer.style.label;
+    if (!lb.field) return;
+    for (const f of layer.data.features) {
+      const raw = f.properties?.[lb.field];
+      if (raw === null || raw === undefined || raw === "") continue;
+      const g = f.geometry;
+      if (!g) continue;
+      const a = anchorOf(g, proj);
+      if (!a || !Number.isFinite(a.x)) continue;
+      if (a.x < -50 || a.y < -50 || a.x > W + 50 || a.y > H + 50) continue;
+      cands.push({
+        text: String(raw),
+        x: a.x,
+        y: a.y,
+        fontSize: lb.size,
+        color: lb.color,
+        bold: lb.bold,
+        halo: lb.halo,
+        anchor: g.type === "Point" || g.type === "MultiPoint" ? "right" : "center",
+        priority: li * 1e7 + Math.min(a.weight, 9e6),
+        kind: `data:${layer.id}`,
+      });
+    }
+  });
+  return placeLabels(cands, { width: W, height: H, maxLabels: 120, padding: 3 });
+}
+
+/** SVG <text> 라벨 (native 가 아닌 것) */
+export function labelsSvgBody(placed: PlacedLabel[]): string {
+  return placed
+    .map((l) => {
+      const cx = l.anchor === "right" ? l.box.left : l.box.left + l.box.width / 2;
+      const y = l.box.top + l.box.height / 2 + l.fontSize * 0.35;
+      return haloText(l.text, cx, y, {
+        size: l.fontSize,
+        color: l.color ?? "#111827",
+        anchor: l.anchor === "right" ? "start" : "middle",
+        bold: l.bold,
+        halo: l.halo !== false,
+      });
+    })
+    .join("");
+}
+
+/* ---------- 배경지도 ---------- */
+
+/**
+ * 미리보기 지도의 타일 <img> 들을 캔버스(가상 크기 × scale)에 합성.
+ * 미리보기는 CSS transform 으로 축소되어 있으므로 getBoundingClientRect 차이를 시각 배율로 나눈다.
+ */
+export async function captureBasemapV2(map: L.Map, scale = 2): Promise<{ png: string; tiles: number }> {
+  const container = map.getContainer();
+  const W = container.offsetWidth;
+  const H = container.offsetHeight;
+  const cRect = container.getBoundingClientRect();
+  const vs = cRect.width / W || 1; // 시각 배율
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(W * scale);
+  canvas.height = Math.round(H * scale);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("캔버스를 만들 수 없습니다.");
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, W, H);
+  ctx.imageSmoothingQuality = "high";
+  const tiles = Array.from(container.querySelectorAll<HTMLImageElement>(".leaflet-tile-pane img.leaflet-tile"));
+  let drawn = 0;
+  for (const img of tiles) {
+    if (!img.complete || img.naturalWidth === 0) continue;
+    const r = img.getBoundingClientRect();
+    const x = (r.left - cRect.left) / vs;
+    const y = (r.top - cRect.top) / vs;
+    const w = r.width / vs;
+    const h = r.height / vs;
+    if (x + w < 0 || x > W || y + h < 0 || y > H) continue;
+    const layerEl = img.closest(".leaflet-layer") as HTMLElement | null;
+    const op = layerEl ? Number(getComputedStyle(layerEl).opacity || "1") : 1;
+    ctx.globalAlpha = Number.isFinite(op) ? op : 1;
+    // 타일 사이 틈 방지를 위해 살짝 겹쳐 그린다
+    ctx.drawImage(img, x - 0.25, y - 0.25, w + 0.5, h + 0.5);
+    drawn++;
+  }
+  ctx.globalAlpha = 1;
+  try {
+    return { png: canvas.toDataURL("image/png").replace(/^data:image\/png;base64,/, ""), tiles: drawn };
+  } catch {
+    throw new Error("배경지도 캡처가 브라우저 보안(CORS)으로 막혔습니다. dev 서버 타일 프록시/crossOrigin 설정을 확인하세요.");
+  }
 }

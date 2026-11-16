@@ -76,6 +76,14 @@ export default defineConfig(async ({ command }) => {
           headers: { "User-Agent": "SlideMap-dev/0.1 (PowerPoint add-in prototype)" },
           configure: stripHopByHop,
         },
+        "/tiles/carto": {
+          target: "https://a.basemaps.cartocdn.com",
+          changeOrigin: true,
+          secure: true,
+          rewrite: (p: string) => p.replace(/^\/tiles\/carto/, ""),
+          headers: { "User-Agent": "SlideMap-dev/0.1 (PowerPoint add-in prototype)" },
+          configure: stripHopByHop,
+        },
       },
     },
     preview: {

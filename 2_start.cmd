@@ -21,6 +21,8 @@ if exist "%LOCALAPPDATA%\Microsoft\Office\16.0\Wef" (
 )
 echo.
 echo [2/3] 개발자 애드인으로 등록 (레지스트리)
+rem --- 레거시 지도 박스(manifest.xml)가 등록돼 있으면 조용히 해제 ---
+call npm run unregister:legacy >nul 2>nul
 call npm run register
 call npm run registered
 call npm run nodebug
@@ -39,8 +41,8 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr /R /C:":3000 .*LISTENING"') d
 echo.
 echo  ---------------------------------------------------------
 echo   이제 PowerPoint 를 직접 열고 [새 프레젠테이션] 에서:
-echo   1) 홈 탭 오른쪽 [Slide Map 패널] 버튼 -^> 우측 관리 패널
-echo   2) 삽입 ^> 내 추가 기능 ^> [개발자 추가 기능] ^> Slide Map -^> 지도 박스
+echo   1) 홈 탭 오른쪽 [Slide Map 패널] 버튼 -^> 우측 패널
+echo   2) 패널의 [+ 지도 추가] -^> 슬라이드에 지도가 들어갑니다
 echo   ※ 이 창은 dev 서버입니다. 작업하는 동안 닫지 마세요.
 echo  ---------------------------------------------------------
 echo.
