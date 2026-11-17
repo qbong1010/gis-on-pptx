@@ -4,6 +4,10 @@
 
 ---
 
+## 2026-11-17 — 애드인 라이선스 MIT 로 변경
+- 요청: "그냥 MIT 로 하자".
+- 한 일 (D-043): `LICENSE` 를 MIT 로 교체, package.json `license: MIT`, README·CLAUDE.md·패널 소스 링크 표기 수정. QGIS 플러그인은 GPL-2.0-or-later 유지(QGIS API 사용 때문).
+
 ## 2026-11-17 — 라이선스 적용 (애드인 AGPL / QGIS GPL) + v1 지도 박스 코드 삭제
 - 요청: 프로젝트명은 gis-on-pptx, 애드인 이름은 Slide Map(슬라이드맵). 애드인은 AGPL, QGIS 는 GPL.
 - 한 일 (D-042)

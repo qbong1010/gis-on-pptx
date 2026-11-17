@@ -301,7 +301,9 @@
 - 로컬 폴더 이름(mapitup)은 개발용 레지스트리 등록 경로·실행 중인 dev 서버 때문에 유지.
 
 ## D-042 라이선스 + v1 지도 박스 코드 삭제
-- 상태: 채택 (사용자 결정: "애드인은 AGPL, QGIS 는 GPL")
+- 상태: **일부 대체됨 → D-043** (애드인 AGPL → MIT). QGIS 플러그인 GPL·v1 코드 삭제는 유지.
+- 대체 사유: 사용자 결정 변경("그냥 MIT 로") — AGPL 의 소스 공개 의무·기여 코드 권리 관리 부담보다 단순함을 선택.
+- 원래 결정(사용자: "애드인은 AGPL, QGIS 는 GPL")
 - 결정
   - 애드인(저장소 기본): **AGPL-3.0-or-later** (`LICENSE`, `package.json` license). 이유(사용자 선택): 서비스화 계획상, 남이 코드를 가져가 수정한 뒤 네트워크 서비스로 운영할 때도 소스 공개 의무가 생기는 라이선스. 패널 설정 팝오버에 소스 코드 링크(AGPL §13).
   - QGIS 플러그인: **GPL-2.0-or-later** (`qgis-plugin/slide_map_bridge/LICENSE`, `__init__.py` SPDX 헤더, metadata 의 repository/tracker/homepage). QGIS 가 GPL-2.0-or-later 이고 플러그인이 QGIS API 를 직접 사용하므로 GPL 계열이 필요(QGIS 공식 저장소 요건).
@@ -309,3 +311,9 @@
 - 의존성 점검(런타임): MIT·BSD-2/3·Apache-2.0·ISC → AGPL-3.0 과 호환. 단 `react-leaflet`(Hippocratic-2.1, 추가 사용 제한이 있어 GPL 계열과 비호환)은 v1 지도 박스에서만 쓰였음.
 - 따라서 **v1 지도 박스(콘텐츠 애드인) 코드 삭제** — D-029 의 "레거시로 남김"을 대체: `index.html`, `src/App.tsx`, `src/main.tsx`, `manifest.xml`, `src/shared/bus.ts`, `src/shared/instanceStore.ts`, `bake.ts` 의 v1 함수, dev 서버 메시지 중계 플러그인(D-024), `register:legacy` 스크립트, `react-leaflet` 의존성. `protocol.ts` 는 가져오기 레이어 타입(`LayerInput`)만 남김. 필요하면 git 이력(커밋 7bfa400 이전)에서 복원 가능.
 - `2_start.cmd`/`3_stop.cmd` 는 npm 스크립트 대신 레지스트리에서 v1 등록값을 직접 지움.
+
+## D-043 애드인 라이선스 MIT
+- 상태: 채택 (사용자 결정)
+- 결정: 저장소 기본(PowerPoint 애드인) **MIT**, 저작권 표기 "Copyright (c) 2026 qbong1010". QGIS 플러그인(`qgis-plugin/`)은 **GPL-2.0-or-later 유지** — QGIS(GPL) API 를 직접 불러 쓰는 플러그인이라 결합물이 GPL 조건을 따르며, QGIS 공식 플러그인 저장소도 GPL 계열을 요구.
+- 영향: 누구나 수정·비공개·상업 이용 가능(저작권·라이선스 문구 유지만 의무). 서비스화 시 경쟁 우위는 코드가 아니라 서버·데이터 처리·운영(아직 미공개)에서 확보. 패널의 소스 코드 링크는 유지(표기만 MIT).
+- v1 지도 박스 삭제(D-042)는 그대로 — 쓰지 않는 코드라 라이선스와 무관하게 정리 상태 유지.

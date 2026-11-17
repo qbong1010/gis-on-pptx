@@ -41,4 +41,4 @@ QGIS → 플러그인 → 플러그인 관리 및 설치 → 설치됨 → **Sli
 `tests\qgis\run_tests.cmd` (헤드리스 QGIS + 실제 PowerPoint), `tests\qgis\run_gui_smoke.ps1` (실제 QGIS GUI).
 
 ## 라이선스
-GPL-2.0-or-later (`slide_map_bridge/LICENSE`) — QGIS(GPL) API 를 사용하는 플러그인이므로 GPL 계열. 저장소의 나머지(PowerPoint 애드인)는 AGPL-3.0-or-later.
+GPL-2.0-or-later (`slide_map_bridge/LICENSE`) — QGIS(GPL) API 를 사용하는 플러그인이므로 GPL 계열. 저장소의 나머지(PowerPoint 애드인)는 MIT.

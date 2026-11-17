@@ -18,4 +18,4 @@ PowerPoint 지도 애드인. v2: 우측 패널(TaskPane) 하나 + 슬라이드�
 - 패키지가 바뀌면 `1_setup.cmd` 다시 실행.
 
 ## 라이선스
-- 애드인 AGPL-3.0-or-later (`LICENSE`), QGIS 플러그인 GPL-2.0-or-later. 새 의존성은 AGPL 호환(MIT·BSD·Apache-2.0·ISC 등)만 추가한다 — 비표준 "윤리" 라이선스(Hippocratic 등)는 AGPL 과 충돌.
+- 애드인 MIT (`LICENSE`), QGIS 플러그인 GPL-2.0-or-later. 애드인 새 의존성은 허용적 라이선스(MIT·BSD·Apache-2.0·ISC 등)만 — GPL/AGPL 이나 비표준 "윤리" 라이선스(Hippocratic 등)는 MIT 배포와 맞지 않으니 피한다.
