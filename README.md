@@ -39,5 +39,7 @@ node scripts/make-manifest.mjs https://<호스팅 주소>
 | 벡터 배경지도 | `python tests/vector/test_vector_basemap.py` |
 | QGIS 플러그인 | `tests\qgis\run_tests.cmd` |
 
-## 레거시
-`index.html` / `src/App.tsx` / `manifest.xml` = v1 콘텐츠 애드인 지도 박스(슬라이드 위 살아있는 지도). 기본 등록하지 않음(`npm run register:legacy`). 결정 D-011 → D-029.
+## 라이선스
+- PowerPoint 애드인(이 저장소 기본): **AGPL-3.0-or-later** — `LICENSE`. 수정본을 배포하거나 네트워크 서비스로 제공하면 그 소스도 같은 라이선스로 공개해야 한다.
+- QGIS 플러그인(`qgis-plugin/`): **GPL-2.0-or-later** — `qgis-plugin/slide_map_bridge/LICENSE`.
+- 지도 데이터는 각 제공처 약관을 따른다: VWorld(국토교통부), © OpenStreetMap contributors (ODbL), © OpenMapTiles, © CARTO.

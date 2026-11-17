@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-11-17 — 라이선스 적용 (애드인 AGPL / QGIS GPL) + v1 지도 박스 코드 삭제
+- 요청: 프로젝트명은 gis-on-pptx, 애드인 이름은 Slide Map(슬라이드맵). 애드인은 AGPL, QGIS 는 GPL.
+- 한 일 (D-042)
+  - `LICENSE`(AGPL-3.0 전문, gnu.org), `qgis-plugin/slide_map_bridge/LICENSE`(GPL-2.0 전문), package.json `license`/`repository`, 플러그인 SPDX 헤더·metadata 링크, README·CLAUDE.md 라이선스 절.
+  - 패널 설정 팝오버에 "소스 코드 (AGPL-3.0)" 링크.
+  - 런타임 의존성 라이선스 점검 → `react-leaflet`(Hippocratic-2.1)만 AGPL 비호환이고 v1 지도 박스에서만 사용 → v1 코드·중계 플러그인·의존성 삭제.
+- 사고 기록: 스크립트 수정 중 파이썬 문자열 `` 이 8진수 이스케이프로 해석돼 `2_start.cmd`/`3_stop.cmd` 레지스트리 경로에 제어문자가 들어갔다가 즉시 발견·수정. 추적 파일 전체에서 제어문자 0건 확인.
+
 ## 2026-11-17 — 프로젝트명 gis-on-pptx + GitHub 공개 저장소
 - 요청: 프로젝트 이름을 gis-on-pptx 로 바꾸고 원격 저장소에 공개로 푸시.
 - 한 일: package 이름 변경, README/CLAUDE.md 제목, 매니페스트 ProviderName 에서 회사명 제거, 공개 전 비밀값 점검(전체 이력에 키 0건), 공개 저장소 생성 후 푸시 (D-041).

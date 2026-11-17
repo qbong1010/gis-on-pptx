@@ -1,14 +1,9 @@
 import path from "node:path";
-import { defineConfig, type Plugin } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { getHttpsServerOptions } from "office-addin-dev-certs";
 
-/**
- * 패널(TaskPane) ↔ 지도 박스(ContentApp) 메시지 중계 (D-024)
- * PowerPoint 에서 두 애드인의 웹뷰 저장소가 분리되어 BroadcastChannel/localStorage 가 통하지 않으므로,
- * 둘 다 이미 접속해 있는 dev 서버 웹소켓(HMR 채널)으로 메시지를 중계한다.
- */
 /**
  * 프록시 응답에서 hop-by-hop 헤더 제거 (D-027)
  * dev 서버는 HTTPS = HTTP/2 로 동작하는데, VWorld 응답에는 `connection: Upgrade, close`, `upgrade: h2,h2c`,
@@ -24,25 +19,13 @@ function stripHopByHop(proxy: any) {
   });
 }
 
-function slideMapRelay(): Plugin {
-  return {
-    name: "slide-map-relay",
-    apply: "serve",
-    configureServer(server) {
-      server.ws.on("slide-map:bus", (data: unknown) => {
-        server.ws.send("slide-map:bus", data as Record<string, unknown>);
-      });
-    },
-  };
-}
-
 // Office 애드인은 반드시 HTTPS 로 서빙해야 한다. (최초 1회: npm run certs)
 export default defineConfig(async ({ command }) => {
   // SLIDEMAP_NO_HTTPS=1 : 자동 테스트용 (Office 에서는 반드시 HTTPS)
   const https = command === "serve" && !process.env.SLIDEMAP_NO_HTTPS ? await getHttpsServerOptions() : undefined;
 
   return {
-    plugins: [react(), tailwindcss(), slideMapRelay()],
+    plugins: [react(), tailwindcss()],
     resolve: {
       alias: {
         "@": path.resolve(import.meta.dirname, "src"),
@@ -96,7 +79,6 @@ export default defineConfig(async ({ command }) => {
       sourcemap: false, // 배포 번들에 소스 노출 방지 (M11)
       rolldownOptions: {
         input: {
-          map: path.resolve(import.meta.dirname, "index.html"), // 지도 박스 (ContentApp)
           taskpane: path.resolve(import.meta.dirname, "taskpane.html"), // 우측 패널 (TaskPaneApp)
           commands: path.resolve(import.meta.dirname, "commands.html"), // 리본 FunctionFile
         },

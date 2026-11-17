@@ -99,6 +99,18 @@ export function SettingsMenu({
             >
               시작 안내(도움말) 다시 보기
             </button>
+            {/* AGPL-3.0 §13: 네트워크로 이 프로그램을 쓰는 사용자에게 소스 코드 제공 (D-042) */}
+            <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+              Slide Map · gis-on-pptx ·{" "}
+              <a
+                href="https://github.com/qbong1010/gis-on-pptx"
+                target="_blank"
+                rel="noreferrer"
+                className="underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-ring"
+              >
+                소스 코드 (AGPL-3.0)
+              </a>
+            </p>
           </div>
         </div>
       )}

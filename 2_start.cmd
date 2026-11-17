@@ -28,8 +28,8 @@ if exist "%WEF%" (
 )
 echo.
 echo [2/3] 개발자 애드인으로 등록 (레지스트리)
-rem --- 레거시 지도 박스(manifest.xml)가 등록돼 있으면 조용히 해제 ---
-call npm run unregister:legacy >nul 2>nul
+rem --- 예전 v1 지도 박스 애드인이 등록돼 있으면 조용히 해제 (D-042) ---
+reg delete "HKCU\Software\Microsoft\Office\16.0\WEF\Developer" /v bd8deeef-efd4-492e-bdcf-49bafcec8d9f /f >nul 2>nul
 call npm run register
 call npm run registered
 call npm run nodebug

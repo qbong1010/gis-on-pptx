@@ -9,11 +9,13 @@ PowerPoint 지도 애드인. v2: 우측 패널(TaskPane) 하나 + 슬라이드�
 - 실환경(실제 PowerPoint)에서 검증 안 된 가정은 `[확인 필요]` 로 표시하고, 검증되면 결과를 적는다.
 
 ## 구조
-- `index.html` → `src/main.tsx` → `src/App.tsx` : 지도 박스 (manifest.xml, ContentApp)
-- `taskpane.html` → `src/taskpane.tsx` → `src/pane/PaneApp.tsx` : 우측 패널 (manifest-taskpane.xml)
-- `src/shared/` : 메시지 프로토콜·버스, 인스턴스 저장소, CRS(해상도 배율)
+- `taskpane.html` → `src/taskpane.tsx` → `src/pane/PaneApp.tsx` : 우측 패널 = 애드인 전체 (manifest-taskpane.xml)
+- `src/shared/` : 문서 저장소(docStore), 레이어 타입, CRS(해상도 배율)
 - `src/lib/` : 파일 가져오기(GeoJSON/SHP), 좌표계 레지스트리·재투영, 배경지도
 
 ## 실행 (Windows)
 - `1_setup.cmd` → `2_start.cmd` (PowerPoint 닫고 실행) → 홈 탭 [Slide Map 패널], 삽입 → 내 추가 기능 → 개발자 추가 기능 → Slide Map
 - 패키지가 바뀌면 `1_setup.cmd` 다시 실행.
+
+## 라이선스
+- 애드인 AGPL-3.0-or-later (`LICENSE`), QGIS 플러그인 GPL-2.0-or-later. 새 의존성은 AGPL 호환(MIT·BSD·Apache-2.0·ISC 등)만 추가한다 — 비표준 "윤리" 라이선스(Hippocratic 등)는 AGPL 과 충돌.

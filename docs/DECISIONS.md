@@ -297,5 +297,15 @@
 - 상태: 채택 (사용자 요청)
 - 결정: 저장소·패키지 이름 `gis-on-pptx`, GitHub 공개(`qbong1010/gis-on-pptx`). 애드인 화면 이름은 "Slide Map" 유지.
 - 공개 전 점검: 전체 git 이력에서 VWorld 키·토큰·`.env.local` 미포함 확인. 매니페스트 `ProviderName` 의 회사명을 `gis-on-pptx` 로 교체 — 개인 프로젝트가 회사 제품으로 보이지 않게.
-- 후속 `[결정 필요]`: 라이선스 미지정(현재 기본 저작권 보유). QGIS 플러그인을 QGIS 공식 플러그인 저장소에 올리려면 GPL 호환 라이선스 필요.
+- 후속: 라이선스 → D-042.
 - 로컬 폴더 이름(mapitup)은 개발용 레지스트리 등록 경로·실행 중인 dev 서버 때문에 유지.
+
+## D-042 라이선스 + v1 지도 박스 코드 삭제
+- 상태: 채택 (사용자 결정: "애드인은 AGPL, QGIS 는 GPL")
+- 결정
+  - 애드인(저장소 기본): **AGPL-3.0-or-later** (`LICENSE`, `package.json` license). 이유(사용자 선택): 서비스화 계획상, 남이 코드를 가져가 수정한 뒤 네트워크 서비스로 운영할 때도 소스 공개 의무가 생기는 라이선스. 패널 설정 팝오버에 소스 코드 링크(AGPL §13).
+  - QGIS 플러그인: **GPL-2.0-or-later** (`qgis-plugin/slide_map_bridge/LICENSE`, `__init__.py` SPDX 헤더, metadata 의 repository/tracker/homepage). QGIS 가 GPL-2.0-or-later 이고 플러그인이 QGIS API 를 직접 사용하므로 GPL 계열이 필요(QGIS 공식 저장소 요건).
+  - 절차: 별도 발급·등록 없음. 저작권은 작성 시 자동 발생, 라이선스는 LICENSE 파일로 선언. 저작권 표기 "Copyright (C) 2026 qbong1010".
+- 의존성 점검(런타임): MIT·BSD-2/3·Apache-2.0·ISC → AGPL-3.0 과 호환. 단 `react-leaflet`(Hippocratic-2.1, 추가 사용 제한이 있어 GPL 계열과 비호환)은 v1 지도 박스에서만 쓰였음.
+- 따라서 **v1 지도 박스(콘텐츠 애드인) 코드 삭제** — D-029 의 "레거시로 남김"을 대체: `index.html`, `src/App.tsx`, `src/main.tsx`, `manifest.xml`, `src/shared/bus.ts`, `src/shared/instanceStore.ts`, `bake.ts` 의 v1 함수, dev 서버 메시지 중계 플러그인(D-024), `register:legacy` 스크립트, `react-leaflet` 의존성. `protocol.ts` 는 가져오기 레이어 타입(`LayerInput`)만 남김. 필요하면 git 이력(커밋 7bfa400 이전)에서 복원 가능.
+- `2_start.cmd`/`3_stop.cmd` 는 npm 스크립트 대신 레지스트리에서 v1 등록값을 직접 지움.

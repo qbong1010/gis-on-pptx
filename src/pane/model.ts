@@ -1,6 +1,6 @@
 /**
  * v2 패널 데이터 모델 (docs/ARCHITECTURE.md §4)
- * 레거시 src/shared/protocol.ts 는 건드리지 않고 새 타입은 여기에 둔다.
+ * 패널(v2) 데이터 모델. 가져오기 레이어 타입은 src/shared/protocol.ts 의 LayerInput.
  */
 import type { BBox } from "geojson";
 

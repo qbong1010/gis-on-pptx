@@ -1,6 +1,6 @@
 # Slide Map v2 아키텍처 (단일 패널 애드인)
 
-> 2026-11-17 03:10 결정 (D-029). 이전 구조(패널 + 콘텐츠 애드인 지도 박스, D-011)는 `legacy` 로 남기되 기본 등록하지 않는다.
+> 2026-11-17 03:10 결정 (D-029). 이전 구조(패널 + 콘텐츠 애드인 지도 박스, D-011)는 D-042 에서 코드 삭제(git 이력에 남음).
 
 ## 1. 한 장 요약
 
@@ -46,7 +46,6 @@ PowerPoint
 | 가져오기 | `src/lib/importers.ts`, `src/lib/gpkg.ts`, `src/lib/dxf.ts`, `src/workers/import.worker.ts` | GeoJSON/SHP/GPKG/DXF, 워커 |
 | 벡터 배경지도 | `src/lib/vectorBasemap.ts` | OpenFreeMap 벡터타일 → 편집형 선·라벨 |
 | QGIS 연동 | `qgis-plugin/` | 슬라이드↔조판 브리지 |
-| 레거시 | `index.html`, `src/App.tsx`, `src/main.tsx`, `manifest.xml` | 콘텐츠 애드인 지도 박스 (등록 안 함) |
 
 ## 4. 데이터 모델
 

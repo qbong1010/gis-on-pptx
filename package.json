@@ -2,6 +2,11 @@
   "name": "gis-on-pptx",
   "private": true,
   "version": "0.1.0",
+  "license": "AGPL-3.0-or-later",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/qbong1010/gis-on-pptx.git"
+  },
   "type": "module",
   "scripts": {
     "certs": "office-addin-dev-certs install",
@@ -13,8 +18,6 @@
     "sideload:stop": "office-addin-debugging stop manifest-taskpane.xml desktop --app powerpoint",
     "validate": "office-addin-manifest validate manifest-taskpane.xml",
     "register": "office-addin-dev-settings register manifest-taskpane.xml",
-    "register:legacy": "office-addin-dev-settings register manifest.xml",
-    "unregister:legacy": "office-addin-dev-settings unregister manifest.xml",
     "unregister": "office-addin-dev-settings unregister manifest-taskpane.xml",
     "nodebug": "office-addin-dev-settings debugging manifest-taskpane.xml --disable",
     "registered": "office-addin-dev-settings registered"
@@ -32,7 +35,6 @@
     "proj4": "^2.23.0",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "react-leaflet": "^5.0.0",
     "shpjs": "^6.2.0",
     "sql.js": "^1.16.0",
     "tailwind-merge": "^3.7.0"
