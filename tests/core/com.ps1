@@ -14,6 +14,16 @@ switch ($Action) {
     }
   }
   "export" { $sl.Export($Arg, "PNG", 1280, 720); "exported $Arg" }
+  "children" {
+    # 그룹(part=Arg)의 자식 덤프: 이름|종류|좌표|여백|글꼴|크기|외곽선
+    foreach ($sh in $sl.Shapes) { if ((Part $sh) -eq $Arg -and $sh.Type -eq 6) {
+      foreach ($c in $sh.GroupItems) {
+        $tf = ""; if ($c.HasTextFrame -ne 0) { $t = $c.TextFrame; $tf = "text='{0}' margins={1}/{2}/{3}/{4} font={5} size={6} bold={7} align={8} vanchor={9} autosize={10} wrap={11}" -f $t.TextRange.Text, $t.MarginLeft, $t.MarginRight, $t.MarginTop, $t.MarginBottom, $t.TextRange.Font.Name, $t.TextRange.Font.Size, $t.TextRange.Font.Bold, $t.TextRange.ParagraphFormat.Alignment, $t.VerticalAnchor, $t.AutoSize, $t.WordWrap }
+        "{0}|type={1}|{2},{3},{4},{5}|part={6}|line={7} fill={8}|{9}" -f $c.Name, $c.Type, [math]::Round($c.Left,2), [math]::Round($c.Top,2), [math]::Round($c.Width,2), [math]::Round($c.Height,2), (Part $c), $c.Line.Visible, $c.Fill.Visible, $tf
+      } } }
+  }
+  "move-part" { foreach ($sh in $sl.Shapes) { if ((Part $sh) -eq $Arg) { $sh.Left = $sh.Left - 120; $sh.Top = $sh.Top - 40; "moved $Arg to $($sh.Left),$($sh.Top)" } } }
+  "ungroup" { foreach ($sh in @($sl.Shapes)) { if ((Part $sh) -eq $Arg -and $sh.Type -eq 6) { $r = $sh.Ungroup(); "ungrouped $Arg -> $($r.Count) shapes" } } }
   "clear" { for ($i = $sl.Shapes.Count; $i -ge 1; $i--) { $sl.Shapes($i).Delete() }; "cleared" }
   "move-north" { foreach ($sh in $sl.Shapes) { if ((Part $sh) -eq "north") { $sh.Left = $sh.Left - 150; $sh.Top = $sh.Top + 100; "moved north to $($sh.Left),$($sh.Top)" } } }
   "resize-basemap" { foreach ($sh in $sl.Shapes) { if ((Part $sh) -eq "basemap") { $sh.LockAspectRatio = 0; $sh.Left = 100; $sh.Top = 40; $sh.Width = 760; $sh.Height = 440; "resized basemap" } } }

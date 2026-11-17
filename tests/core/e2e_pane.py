@@ -84,6 +84,8 @@ with sync_playwright() as p:
     check(sum(1 for x in parts if x and x.startswith("layer:")) >= 2, "per-layer svg present")
     for part in ("north", "scale", "legend"):
         check(part in parts, f"{part} present")
+    ch = page.evaluate("(()=>{const g=window.__slidemapMock.shapes.find(s=>s.tags.SLIDEMAP_PART==='legend');return g&&g.children?g.children.map(c=>({kind:c.kind,part:c.tags.SLIDEMAP_PART,svgText:c.kind==='svg'&&/<text/.test(c.data)})):null})()")
+    check(ch is not None and sum(c["kind"] == "svg" for c in ch) == 1 and sum(c["kind"] == "text" for c in ch) >= 2 and not any(c["svgText"] for c in ch), f"legend = group of 1 text-free svg + native text boxes {[c['part'] for c in ch or []]}")
     check(all(x["ver"] == "2" and x["map"] == mapid for x in s), "all shapes tagged with map id/ver")
     check(all(x["name"].startswith("SlideMap · ") for x in s), "names")
     check(len([x for x in s if x["part"] == "basemap"]) == 1, "single basemap after replace")

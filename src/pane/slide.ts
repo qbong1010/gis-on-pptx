@@ -53,6 +53,8 @@ export interface SlideAdapter {
   addFrameRect(f: Frame, tags: Record<string, string>, name: string): Promise<string>;
   bringToFront(ids: string[]): Promise<void>;
   group?(ids: string[], name: string): Promise<string>;
+  /** 도형 하나의 현재 슬라이드 사각형 (그룹 묶은 뒤 실제 위치 읽기용) */
+  getRect?(id: string): Promise<Frame | null>;
   ungroup?(id: string): Promise<string[]>;
   onSelectionChanged(cb: (sel: SlideShape[]) => void): () => void;
 }
@@ -358,6 +360,16 @@ export class OfficeSlideAdapter implements SlideAdapter {
   }
 
   /** 묶음 해제 — 실측(PowerPoint 16.0.20527): ungroup() 은 반환값 없음(void), 자식 도형은 id 와 태그를 그대로 유지 → 해제 전에 자식 id 를 읽어 둔다 */
+  async getRect(id: string): Promise<Frame | null> {
+    return PowerPoint.run(async (ctx) => {
+      const slide = await this.getSlide(ctx);
+      const sh = slide.shapes.getItemOrNullObject(id);
+      sh.load("isNullObject,left,top,width,height");
+      await ctx.sync();
+      return sh.isNullObject ? null : { left: sh.left, top: sh.top, width: sh.width, height: sh.height };
+    });
+  }
+
   async ungroup(id: string): Promise<string[]> {
     return PowerPoint.run(async (ctx) => {
       const slide = await this.getSlide(ctx);
@@ -448,7 +460,11 @@ export class MockSlideAdapter implements SlideAdapter {
   patch(id: string, fn: (s: MockShape) => void) {
     const s = this.shapes.find((x) => x.id === id);
     if (s) {
+      const l0 = s.left;
+      const t0 = s.top;
       fn(s);
+      const shift = (g: MockShape, dx: number, dy: number) => g.children?.forEach((c) => ((c.left += dx), (c.top += dy), shift(c, dx, dy)));
+      if (s.children && (s.left !== l0 || s.top !== t0)) shift(s, s.left - l0, s.top - t0); // 그룹을 옮기면 자식도 함께
       this.emit();
     }
   }
@@ -533,6 +549,10 @@ export class MockSlideAdapter implements SlideAdapter {
     this.shapes = [...this.shapes.filter((s) => !ids.includes(s.id)), g];
     this.emit();
     return id;
+  }
+  async getRect(id: string) {
+    const s = this.shapes.find((x) => x.id === id);
+    return s ? { left: s.left, top: s.top, width: s.width, height: s.height } : null;
   }
   async ungroup(id: string) {
     const g = this.shapes.find((s) => s.id === id);

@@ -54,6 +54,51 @@ export default function MockSlide({ adapter }: { adapter: MockSlideAdapter }) {
   const src = (s: MockShape) =>
     s.kind === "png" ? `data:image/png;base64,${s.data}` : s.kind === "svg" ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(s.data)}` : undefined;
 
+  const renderShape = (s: MockShape, parent: MockShape | null): React.ReactNode => {
+    const sel = adapter.selection.includes(s.id);
+    return (
+      <div
+        key={s.id}
+        data-shape-id={s.id}
+        data-part={s.tags.SLIDEMAP_PART}
+        title={s.name}
+        onPointerDown={(e) => (parent ? undefined : onDown(e, s, "move"))}
+        className={parent ? "absolute" : "absolute cursor-move"}
+        style={{
+          left: (s.left - (parent?.left ?? 0)) * k,
+          top: (s.top - (parent?.top ?? 0)) * k,
+          width: s.width * k,
+          height: s.height * k,
+          transform: s.textStyle?.rotation ? `rotate(${s.textStyle.rotation}deg)` : undefined,
+          outline: sel ? "1.5px solid #2563eb" : s.kind === "group" && !parent ? "1px dashed #9ca3af" : undefined,
+        }}
+      >
+        {src(s) && <img src={src(s)} alt="" draggable={false} className="pointer-events-none size-full select-none" style={{ objectFit: "fill" }} />}
+        {s.kind === "text" && (
+          <div
+            className="pointer-events-none size-full whitespace-nowrap"
+            style={{
+              fontSize: (s.textStyle?.fontSizePt ?? 9) * k,
+              color: s.textStyle?.color,
+              fontWeight: s.textStyle?.bold ? 700 : 400,
+              textAlign: s.textStyle?.align === "Left" ? "left" : s.textStyle?.align === "Right" ? "right" : "center",
+              lineHeight: `${s.height * k}px`,
+            }}
+          >
+            {s.data}
+          </div>
+        )}
+        {s.children?.map((c) => renderShape(c, s))}
+        {sel && !parent && (
+          <span
+            onPointerDown={(e) => onDown(e, s, "resize")}
+            className="absolute -right-1 -bottom-1 size-2.5 cursor-nwse-resize rounded-sm border border-blue-600 bg-white"
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <div ref={rootRef} className="w-full">
       <div
@@ -64,49 +109,7 @@ export default function MockSlide({ adapter }: { adapter: MockSlideAdapter }) {
         onPointerUp={onUp}
         onPointerDown={() => adapter.select([])}
       >
-        {adapter.shapes.map((s) => {
-          const sel = adapter.selection.includes(s.id);
-          return (
-            <div
-              key={s.id}
-              data-shape-id={s.id}
-              data-part={s.tags.SLIDEMAP_PART}
-              title={s.name}
-              onPointerDown={(e) => onDown(e, s, "move")}
-              className="absolute cursor-move"
-              style={{
-                left: s.left * k,
-                top: s.top * k,
-                width: s.width * k,
-                height: s.height * k,
-                transform: s.textStyle?.rotation ? `rotate(${s.textStyle.rotation}deg)` : undefined,
-                outline: sel ? "1.5px solid #2563eb" : s.kind === "group" ? "1px dashed #9ca3af" : undefined,
-              }}
-            >
-              {src(s) && <img src={src(s)} alt="" draggable={false} className="pointer-events-none size-full select-none" style={{ objectFit: "fill" }} />}
-              {s.kind === "text" && (
-                <div
-                  className="pointer-events-none size-full whitespace-nowrap"
-                  style={{
-                    fontSize: (s.textStyle?.fontSizePt ?? 9) * k,
-                    color: s.textStyle?.color,
-                    fontWeight: s.textStyle?.bold ? 700 : 400,
-                    textAlign: s.textStyle?.align === "Left" ? "left" : "center",
-                    lineHeight: `${s.height * k}px`,
-                  }}
-                >
-                  {s.data}
-                </div>
-              )}
-              {sel && (
-                <span
-                  onPointerDown={(e) => onDown(e, s, "resize")}
-                  className="absolute -right-1 -bottom-1 size-2.5 cursor-nwse-resize rounded-sm border border-blue-600 bg-white"
-                />
-              )}
-            </div>
-          );
-        })}
+        {adapter.shapes.map((s) => renderShape(s, null))}
         {adapter.shapes.length === 0 && <p className="absolute inset-0 grid place-items-center text-[11px] text-muted-foreground">슬라이드가 비어 있습니다</p>}
       </div>
     </div>

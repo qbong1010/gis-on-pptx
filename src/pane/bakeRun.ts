@@ -12,12 +12,20 @@ import { captureBasemapV2, captureHiRes, retryBadTiles, makeProjector, labelsSvg
 import type { Basemap } from "@/lib/basemaps";
 import type { PlacedLabel } from "@/lib/labels";
 import { diag } from "@/pane/diag";
-import { buildDecos } from "@/pane/decorate";
+import { buildDecos, type PlacedDeco } from "@/pane/decorate";
+import { measureText } from "@/lib/labels";
 import type { DecoName, Frame, MapDoc } from "@/pane/model";
 import { TAG_MAP, TAG_PART, TAG_VER, type SlideAdapter, type SlideShape } from "@/pane/slide";
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const MOVABLE: DecoName[] = ["north", "scale", "legend"];
+
+/** 꾸미기 글자 상자 높이 = 글자 크기(px) × 이 값, 세로 가운데 맞춤. 실측(PowerPoint) 보정값 */
+export const DECO_TEXT_BOX_H = 1.3;
+/** 글자 가운데 위치 보정: 글자 크기(px) 의 비율만큼 아래로 (실측 보정, + = 아래) */
+export const DECO_TEXT_DY = 0.05;
+/** 글자 상자 폭 여유(px) */
+const DECO_TEXT_SLACK = 4;
 
 export type Inspect = {
   /** 삭제 대상(이 지도의 기존 객체 + 묶음 해제로 풀린 자식) */
@@ -114,6 +122,7 @@ type Part =
   | { kind: "frame"; part: string; label: string; frame: Frame }
   | { kind: "png"; part: string; label: string; data: string; frame: Frame }
   | { kind: "svg"; part: string; label: string; data: string; frame: Frame }
+  | { kind: "deco"; part: DecoName; label: string; deco: PlacedDeco; frame: Frame }
   | { kind: "text"; part: string; label: string; text: string; frame: Frame; style: Parameters<SlideAdapter["addTextBox"]>[2] };
 
 export async function runBake(p: BakeParams): Promise<BakeResult> {
@@ -253,7 +262,10 @@ export async function runBake(p: BakeParams): Promise<BakeResult> {
       fr.top = r2(Math.min(Math.max(f.top + rel.y, f.top), Math.max(f.top, f.top + f.height - fr.height)));
     }
     bakedPos[name] = { left: fr.left, top: fr.top };
-    parts.push({ kind: "svg", part: name, label: { legend: "범례", scale: "축척", north: "방위표" }[name], data: d.svg, frame: fr });
+    const label = { legend: "범례", scale: "축척", north: "방위표" }[name];
+    // 글자 없는 SVG + 네이티브 텍스트 상자 + 그룹 (텍스트 상자·그룹을 지원할 때). 아니면 글자 포함 SVG 한 장
+    if (adapter.caps.textBox && adapter.caps.group && adapter.group && adapter.addTextBoxes && d.texts.length) parts.push({ kind: "deco", part: name, label, deco: d, frame: fr });
+    else parts.push({ kind: "svg", part: name, label, data: d.svg, frame: fr });
   }
   for (const n of MOVABLE) if (!decos[n] && !showDeco[n]) delete userRel[n]; // 끈 요소의 오프셋은 버린다
   if (doc.deco.legend.show && !p.placeholder && !decos.legend) notes.push("범례에 표시할 레이어가 없습니다.");
@@ -276,6 +288,61 @@ export async function runBake(p: BakeParams): Promise<BakeResult> {
       insertedParts.push(...batch.map((b) => b.part));
       batch = [];
     };
+    /** 꾸미기 한 개 = 글자 없는 SVG + 글자별 텍스트 상자 → 그룹(대표 태그 = part, 자식 = part-graphic/part-text) */
+    const insertDecoGroup = async (pt: Extract<Part, { kind: "deco" }>) => {
+      const d = pt.deco;
+      const fr = pt.frame;
+      const kx2 = d.width ? fr.width / d.width : 1;
+      const ky2 = d.height ? fr.height / d.height : 1;
+      const name = `SlideMap · ${doc.name} · ${pt.label}`;
+      const gid0 = await adapter.insertSvg(d.svgGraphic, fr);
+      inserted.push(gid0);
+      insertedParts.push(`${pt.part}-graphic`);
+      await adapter.tagShape(gid0, tagsFor(`${pt.part}-graphic`), `${name} · 도형`);
+      const items = d.texts.map((t, i) => {
+        const wpx = measureText(t.text, t.size, t.bold) + DECO_TEXT_SLACK;
+        const cy = t.y + t.size * DECO_TEXT_DY;
+        // 상자는 장식 영역 안에 머문다(세로 가운데는 그대로, 글자는 상자 밖으로 넘쳐도 그려짐) → 그룹 경계 = SVG 영역 → 위치 판정이 어긋나지 않는다
+        const hpx = Math.max(1, Math.min(t.size * DECO_TEXT_BOX_H, 2 * Math.min(cy, d.height - cy)));
+        const left0 = t.anchor === "start" ? t.x : t.anchor === "middle" ? t.x - wpx / 2 : t.x - wpx;
+        const left = Math.max(0, left0);
+        const right = Math.min(d.width, left0 + wpx);
+        return {
+          text: t.text,
+          box: { left: r2(fr.left + left * kx2), top: r2(fr.top + (cy - hpx / 2) * ky2), width: r2(Math.max(1, right - left) * kx2), height: r2(hpx * ky2) },
+          style: {
+            fontSizePt: r2(t.size * kx2),
+            color: t.color,
+            bold: t.bold,
+            fontName: "Malgun Gothic",
+            align: (t.anchor === "start" ? "Left" : t.anchor === "end" ? "Right" : "Center") as "Left" | "Right" | "Center",
+          },
+          tags: tagsFor(`${pt.part}-text`),
+          name: `${name} · 글자 ${i + 1}`,
+        };
+      });
+      const tids = await adapter.addTextBoxes!(items);
+      inserted.push(...tids);
+      insertedParts.push(...tids.map(() => `${pt.part}-text`));
+      try {
+        const grp = await adapter.group!([gid0, ...tids], name);
+        // 롤백 목록: 자식 → 그룹 id (그룹을 지우면 자식도 지워진다)
+        const gone = new Set([gid0, ...tids]);
+        for (let i = inserted.length - 1; i >= 0; i--) if (gone.has(inserted[i])) (inserted.splice(i, 1), insertedParts.splice(i, 1));
+        inserted.push(grp);
+        insertedParts.push(pt.part);
+        await adapter.tagShape(grp, tagsFor(pt.part), name);
+        const rect = adapter.getRect ? await adapter.getRect(grp) : null;
+        if (rect) {
+          if (movedFrom(rect, fr)) diag(`꾸미기 그룹 위치가 프레임과 다름(${pt.part}): ${r2(rect.left)},${r2(rect.top)} ≠ ${fr.left},${fr.top}`, "warn");
+          bakedPos[pt.part] = { left: r2(rect.left), top: r2(rect.top) };
+        }
+      } catch (e) {
+        // 묶기 실패: 낱개로 두되 대표 part 를 SVG 도형에 달아 위치 추적이 되게 한다
+        notes.push(`${pt.label} 묶기 실패(낱개로 둠): ${e instanceof Error ? e.message : e}`);
+        await adapter.tagShape(gid0, tagsFor(pt.part));
+      }
+    };
     for (const pt of parts) {
       if (pt.kind === "text") {
         batch.push(pt);
@@ -295,6 +362,8 @@ export async function runBake(p: BakeParams): Promise<BakeResult> {
         inserted.push(id);
         insertedParts.push(pt.part);
         await adapter.tagShape(id, tagsFor(pt.part), name);
+      } else if (pt.kind === "deco") {
+        await insertDecoGroup(pt);
       } else if (pt.kind === "frame") {
         id = await adapter.addFrameRect(pt.frame, tagsFor(pt.part), name);
         inserted.push(id);
