@@ -4,6 +4,10 @@
 
 ---
 
+## 2026-11-17 — 프로젝트명 gis-on-pptx + GitHub 공개 저장소
+- 요청: 프로젝트 이름을 gis-on-pptx 로 바꾸고 원격 저장소에 공개로 푸시.
+- 한 일: package 이름 변경, README/CLAUDE.md 제목, 매니페스트 ProviderName 에서 회사명 제거, 공개 전 비밀값 점검(전체 이력에 키 0건), 공개 저장소 생성 후 푸시 (D-041).
+
 ## 2026-11-17 04:30 — 배포판(설치형) 경로 실검증 + 설치 스크립트 버그 2건 수정
 - 목적: "회사·집 PC 에 한 번 설치" 경로(D-032)가 실제로 동작하는지 끝까지 확인.
 - 방법: 배포 빌드(`VITE_VWORLD_KEY_PUBLIC` 지정) → `make-manifest.mjs https://localhost:3001` → 프록시 없는 정적 HTTPS 서버로 서빙 → `install-addin.ps1 -ManifestUrl …` 로 설치 → 배포용 Id 로 작업창이 자동으로 열리는 문서로 실제 PowerPoint 실행 → `tests/core/e2e_real.py` 전체 실행.

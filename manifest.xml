@@ -15,7 +15,7 @@
 
   <Id>bd8deeef-efd4-492e-bdcf-49bafcec8d9f</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Dohwa Urban Planning</ProviderName>
+  <ProviderName>gis-on-pptx</ProviderName>
   <DefaultLocale>ko-KR</DefaultLocale>
   <DisplayName DefaultValue="Slide Map" />
   <Description DefaultValue="슬라이드 위에서 지도를 패닝/줌하고 GeoJSON을 올린 뒤 PPT 도형으로 정착(Bake)합니다." />

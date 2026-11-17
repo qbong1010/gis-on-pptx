@@ -13,7 +13,7 @@
 
   <Id>55565cbb-3a80-4456-8e3a-6ee14e5f39b1</Id>
   <Version>1.0.0.0</Version>
-  <ProviderName>Dohwa Urban Planning</ProviderName>
+  <ProviderName>gis-on-pptx</ProviderName>
   <DefaultLocale>ko-KR</DefaultLocale>
   <DisplayName DefaultValue="Slide Map 패널" />
   <Description DefaultValue="패널에서 지도를 편집하고 슬라이드에 배경지도·도형·라벨·방위표·축척·범례를 개별 객체로 반영합니다." />

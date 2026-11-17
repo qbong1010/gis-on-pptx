@@ -1,4 +1,4 @@
-# Slide Map — PowerPoint 지도 애드인 (v2)
+# gis-on-pptx — PowerPoint 지도 애드인 "Slide Map" (v2)
 
 > 작업 이력 `docs/DEVLOG.md` · 의사결정 `docs/DECISIONS.md` · 구조 `docs/ARCHITECTURE.md`
 > 설치(회사/집 PC) `docs/INSTALL.md` · 서비스화 기획 `docs/SERVICE_PLAN.md` · QGIS 연동 `qgis-plugin/README.md`

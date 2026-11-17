@@ -1,6 +1,6 @@
-# Slide Map — 작업 규칙
+# gis-on-pptx (Slide Map) — 작업 규칙
 
-PowerPoint 지도 애드인 (우측 패널 TaskPane + 슬라이드 지도 박스 ContentApp).
+PowerPoint 지도 애드인. v2: 우측 패널(TaskPane) 하나 + 슬라이드에는 태그 붙은 분리 객체 (`docs/ARCHITECTURE.md`). 공개 저장소: https://github.com/qbong1010/gis-on-pptx — 비밀값(.env.local, 키)은 절대 커밋하지 않는다.
 
 ## 기록 (필수)
 - 작업할 때마다 `docs/DEVLOG.md` 맨 위에 항목 추가: 시각(KST) · 요청 · 한 일 · 검증 · 남은 문제.
