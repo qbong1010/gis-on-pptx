@@ -8,8 +8,8 @@ if "%~1"=="" (
 ) else (
   set "DEST=%~1\python\plugins\slide_map_bridge"
 )
-echo 원본: %SRC%
-echo 대상: %DEST%
+echo SRC : %SRC%
+echo DEST: %DEST%
 if not exist "%DEST%" mkdir "%DEST%"
 robocopy "%SRC%" "%DEST%" /MIR /XD __pycache__ /XF *.pyc /NFL /NDL /NJH /NJS /NP
 rem robocopy 종료 코드 7 이하는 성공
@@ -18,9 +18,6 @@ if %ERRORLEVEL% GEQ 8 (
   exit /b 1
 )
 echo.
-echo 설치 완료. QGIS에서 다음을 하세요:
-echo   1. QGIS 실행 (이미 켜져 있으면 재시작)
-echo   2. 메뉴 플러그인 ^> 플러그인 관리 및 설치 ^> 설치됨
-echo   3. "Slide Map Bridge" 체크
-echo   4. 메뉴 플러그인 ^> Slide Map ^> 슬라이드 → 조판…
+rem 안내문은 cmd 가 UTF-8 한글 줄을 잘못 읽는 문제를 피하려고 별도 파일로 출력한다
+type "%~dp0install-message.txt"
 exit /b 0
